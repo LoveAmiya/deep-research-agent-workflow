@@ -58,6 +58,7 @@ def build_demo_execution(load_dotenv: bool = False, resume_from_run_id: str | No
                 checkpoint_enabled=True,
                 resume_from_run_id=resume_from_run_id,
                 checkpoint_dir=DEFAULT_CHECKPOINT_DIR,
+                replan_enabled=True,
             )
         )
     else:
@@ -75,6 +76,7 @@ def build_demo_execution(load_dotenv: bool = False, resume_from_run_id: str | No
             checkpoint_enabled=True,
             resume_from_run_id=resume_from_run_id,
             checkpoint_dir=DEFAULT_CHECKPOINT_DIR,
+            replan_enabled=True,
         )
     result["llm_config"] = llm_config
     result["llm_client"] = llm_client
@@ -132,6 +134,10 @@ def main() -> None:
     print(f"Resumed from run_id: {checkpoint_metadata.get('resumed_from_run_id')}")
     print(f"Skipped node count: {checkpoint_metadata.get('skipped_node_count')}")
     print(f"Reexecuted node count: {checkpoint_metadata.get('reexecuted_node_count')}")
+    print(f"Replan enabled: {checkpoint_metadata.get('replan_enabled')}")
+    print(f"Replan attempts: {checkpoint_metadata.get('replan_attempts')}")
+    print(f"Replan actions: {checkpoint_metadata.get('replan_actions')}")
+    print(f"Force synthesis used: {checkpoint_metadata.get('force_synthesis_used')}")
     if checkpoint_metadata.get("resume_checkpoint_missing"):
         print(f"Resume checkpoint missing; started a new run for requested id: {resume_from_run_id}")
     print(f"LLM enabled: {llm_config.enabled}")

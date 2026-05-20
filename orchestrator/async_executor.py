@@ -12,7 +12,9 @@ from orchestrator.checkpoint import (
     serialize_checkpoint_output,
     utc_now_iso,
 )
+from orchestrator.dag_replanner import DAGReplanner
 from orchestrator.dag import TaskGraph, TaskNode
+from orchestrator.replan import ReplanPolicy, ReplanTrigger, RuleBasedReplanPolicy
 from orchestrator.state import TaskState
 from orchestrator.trace import TraceRecorder
 
@@ -41,6 +43,11 @@ class AsyncDAGExecutor:
         checkpoint: Optional[RunCheckpoint] = None,
         checkpoint_enabled: bool = False,
         resume: bool = False,
+        replan_enabled: bool = False,
+        replan_policy: Optional[ReplanPolicy] = None,
+        max_replan_attempts: int = 2,
+        max_failed_nodes_before_force_synthesis: int = 3,
+        force_synthesis_on_replan_exhausted: bool = True,
     ) -> None:
         self.graph = graph
         self.handlers = handlers
@@ -54,6 +61,23 @@ class AsyncDAGExecutor:
         self.checkpoint_save_count = 0
         self.skipped_node_count = 0
         self.reexecuted_node_count = 0
+        self.replan_enabled = replan_enabled
+        self.replan_policy = replan_policy or RuleBasedReplanPolicy(
+            max_replan_attempts=max_replan_attempts,
+            max_failed_nodes_before_force_synthesis=max_failed_nodes_before_force_synthesis,
+            force_synthesis_on_replan_exhausted=force_synthesis_on_replan_exhausted,
+        )
+        self.dag_replanner = DAGReplanner()
+        self.replan_attempts = 0
+        self.replan_trigger_count = 0
+        self.replan_actions: list[str] = []
+        self.replanned_node_ids: list[str] = []
+        self.replan_reasons: list[str] = []
+        self.replan_history: list[dict] = []
+        self.replaced_node_ids: list[str] = []
+        self.force_synthesis_used = False
+        self.aborted_by_replan_policy = False
+        self.replan_exhausted = False
 
     async def execute(self) -> AsyncExecutionResult:
         self.graph.validate()
@@ -104,9 +128,23 @@ class AsyncDAGExecutor:
                 if finished_task_id is not None:
                     completed.add(finished_task_id)
                     del running[finished_task_id]
+                    if states.get(finished_task_id) == TaskState.FAILED:
+                        self._handle_replan_for_failure(
+                            node=self.graph.get_node(finished_task_id),
+                            outputs=outputs,
+                            states=states,
+                            error=errors.get(finished_task_id, "task failed"),
+                        )
 
         self._skip_blocked_tasks(states, completed)
-        success = all(state == TaskState.SUCCESS for state in states.values())
+        success = self.force_synthesis_used or (
+            not self.aborted_by_replan_policy
+            and all(
+                state == TaskState.SUCCESS
+                or (task_id in self.replaced_node_ids and state == TaskState.SKIPPED)
+                for task_id, state in states.items()
+            )
+        )
         self._finalize_checkpoint(success=success)
         return AsyncExecutionResult(
             success=success,
@@ -328,4 +366,183 @@ class AsyncDAGExecutor:
             "skipped_nodes": self.skipped_node_count,
             "reexecuted_nodes": self.reexecuted_node_count,
             "failed_nodes_after_resume": failed_nodes,
+            "replan_enabled": self.replan_enabled,
+            "replan_attempts": self.replan_attempts,
+            "replan_trigger_count": self.replan_trigger_count,
+            "replan_actions": list(self.replan_actions),
+            "replanned_node_ids": list(self.replanned_node_ids),
+            "force_synthesis_used": self.force_synthesis_used,
+            "aborted_by_replan_policy": self.aborted_by_replan_policy,
+            "replan_reasons": list(self.replan_reasons),
+            "replan_history": list(self.replan_history),
+            "generated_replan_nodes": list(self.replanned_node_ids),
+            "replan_exhausted": self.replan_exhausted,
         }
+
+    def _handle_replan_for_failure(
+        self,
+        node: TaskNode,
+        outputs: Dict[str, Any],
+        states: Dict[str, TaskState],
+        error: str,
+    ) -> None:
+        if not self.replan_enabled:
+            return
+        if self.force_synthesis_used:
+            self._apply_force_synthesis(node=node, outputs=outputs, states=states, error=error)
+            return
+        trigger_type = "node_timeout" if "timed out" in error.lower() else "node_failed"
+        trigger = ReplanTrigger(
+            run_id=self.checkpoint.run_id if self.checkpoint is not None else "",
+            node_id=node.task_id,
+            trigger_type=trigger_type,
+            reason=f"Node {node.task_id} failed.",
+            failed_agent=node.agent_name,
+            failed_node_type=node.task_id,
+            error=error,
+            metadata={"node_metadata": dict(node.metadata)},
+        )
+        self.replan_trigger_count += 1
+        decision = self.replan_policy.decide(trigger, self.graph, self._replan_run_state(states))
+        self.replan_actions.append(decision.action)
+        self.replan_reasons.append(decision.reason)
+        self.replan_history.append(
+            {
+                "trigger": trigger.__dict__,
+                "decision": {
+                    "should_replan": decision.should_replan,
+                    "action": decision.action,
+                    "reason": decision.reason,
+                    "metadata": decision.metadata,
+                },
+            }
+        )
+        if not decision.should_replan and decision.action == "abort":
+            self.aborted_by_replan_policy = True
+            self.replan_exhausted = bool(decision.metadata.get("replan_exhausted"))
+            self._update_checkpoint_replan_metadata()
+            self._save_checkpoint()
+            return
+
+        self.replan_attempts += 1
+        apply_result = self.dag_replanner.apply_decision(
+            self.graph,
+            decision,
+            self._replan_run_state(states),
+        )
+        self.replanned_node_ids.extend(apply_result.inserted_node_ids)
+        self.force_synthesis_used = self.force_synthesis_used or apply_result.force_synthesis
+        self.aborted_by_replan_policy = self.aborted_by_replan_policy or apply_result.aborted
+        self.replan_exhausted = self.replan_exhausted or bool(decision.metadata.get("replan_exhausted"))
+        if apply_result.inserted_node_ids:
+            self._wire_replan_nodes(node.task_id, apply_result.inserted_node_ids, states)
+            self._register_default_replan_handlers(apply_result.inserted_node_ids, node, decision.action, error)
+        if self.force_synthesis_used:
+            self._apply_force_synthesis(node=node, outputs=outputs, states=states, error=error)
+        self._update_checkpoint_replan_metadata()
+        self._save_checkpoint()
+
+    def _wire_replan_nodes(
+        self,
+        failed_node_id: str,
+        inserted_node_ids: list[str],
+        states: Dict[str, TaskState],
+    ) -> None:
+        replacement_node_id = inserted_node_ids[-1]
+        if failed_node_id not in self.replaced_node_ids:
+            self.replaced_node_ids.append(failed_node_id)
+        for node in self.graph.nodes.values():
+            if node.task_id in inserted_node_ids:
+                states[node.task_id] = TaskState.PENDING
+                continue
+            if failed_node_id in node.depends_on:
+                node.depends_on = [
+                    replacement_node_id if dependency_id == failed_node_id else dependency_id
+                    for dependency_id in node.depends_on
+                ]
+        states[failed_node_id] = TaskState.SKIPPED
+
+    def _register_default_replan_handlers(
+        self,
+        inserted_node_ids: list[str],
+        failed_node: TaskNode,
+        decision_action: str,
+        error: str,
+    ) -> None:
+        for node_id in inserted_node_ids:
+            if node_id in self.handlers:
+                continue
+            self.handlers[node_id] = self._default_replan_handler(failed_node, decision_action, error)
+
+    def _default_replan_handler(self, failed_node: TaskNode, decision_action: str, error: str):
+        def handler(outputs, node):
+            output_kind = node.metadata.get("output_kind", "generic")
+            content = {
+                "replanned": True,
+                "output_kind": output_kind,
+                "action": decision_action,
+                "parent_failed_node_id": failed_node.task_id,
+                "reason": node.metadata.get("replan_reason", ""),
+                "error": error,
+            }
+            if node.metadata.get("as_agent_result", False):
+                return AgentResult(
+                    agent_name=node.agent_name,
+                    success=True,
+                    output=content,
+                    metadata={
+                        "generated_by_replan": True,
+                        "replan_action": decision_action,
+                        "parent_failed_node_id": failed_node.task_id,
+                    },
+                )
+            return content
+
+        return handler
+
+    def _apply_force_synthesis(
+        self,
+        node: TaskNode,
+        outputs: Dict[str, Any],
+        states: Dict[str, TaskState],
+        error: str,
+    ) -> None:
+        outputs[node.task_id] = AgentResult(
+            agent_name=node.agent_name,
+            success=True,
+            output={
+                "partial_report": True,
+                "force_synthesis_used": True,
+                "missing_sections": [],
+                "failed_nodes": [node.task_id],
+                "evidence_limitations": [error],
+            },
+            metadata={
+                "partial_report": True,
+                "force_synthesis_used": True,
+                "failed_nodes": [node.task_id],
+                "evidence_limitations": [error],
+            },
+        )
+        states[node.task_id] = TaskState.SUCCESS
+
+    def _replan_run_state(self, states: Dict[str, TaskState]) -> Dict[str, Any]:
+        return {
+            "replan_attempts": self.replan_attempts,
+            "failed_node_count": sum(1 for state in states.values() if state == TaskState.FAILED),
+            "replan_history": list(self.replan_history),
+        }
+
+    def _update_checkpoint_replan_metadata(self) -> None:
+        if self.checkpoint is None:
+            return
+        self.checkpoint.metadata.update(
+            {
+                "replan_enabled": self.replan_enabled,
+                "replan_attempts": self.replan_attempts,
+                "replan_history": list(self.replan_history),
+                "generated_replan_nodes": list(self.replanned_node_ids),
+                "force_synthesis_used": self.force_synthesis_used,
+                "replan_exhausted": self.replan_exhausted,
+            }
+        )

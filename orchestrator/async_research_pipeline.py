@@ -24,6 +24,10 @@ async def async_run_research_pipeline(
     resume_from_run_id: str | None = None,
     checkpoint_dir: str = "runs/checkpoints",
     run_id: str | None = None,
+    replan_enabled: bool = False,
+    max_replan_attempts: int = 2,
+    max_failed_nodes_before_force_synthesis: int = 3,
+    force_synthesis_on_replan_exhausted: bool = True,
 ) -> dict:
     checkpoint, checkpoint_store, resumed, resume_missing = _prepare_checkpoint(
         question_text=question_text,
@@ -52,6 +56,10 @@ async def async_run_research_pipeline(
         checkpoint=checkpoint,
         checkpoint_enabled=checkpoint is not None and checkpoint_store is not None,
         resume=resumed,
+        replan_enabled=replan_enabled,
+        max_replan_attempts=max_replan_attempts,
+        max_failed_nodes_before_force_synthesis=max_failed_nodes_before_force_synthesis,
+        force_synthesis_on_replan_exhausted=force_synthesis_on_replan_exhausted,
     ).execute()
     return build_research_pipeline_result(
         question=components["question"],

@@ -6,7 +6,7 @@ The current implementation is a deterministic local prototype by default. Search
 
 ## Current Status
 
-The repository is currently at Phase 18: Checkpoint / Resume for DAG Runs.
+The repository is currently at Phase 19: Dynamic Replan for Failed / Insufficient DAG Runs.
 
 Implemented capabilities:
 
@@ -25,13 +25,14 @@ Implemented capabilities:
 - provider-based search registry with deterministic mock fallback
 - robust web fetcher abstraction with lightweight HTML title/main text extraction
 - JSON checkpoint/resume for DAG runs
+- deterministic rule-based dynamic replan for failed or insufficient DAG runs
 - lightweight evidence spans, citation IDs, citation markers, and citation validation
 - optional asyncio DAG executor with max concurrency, timeout, and async traces
 - optional iterative rule-based Red/Blue review loop with bounded convergence checks
 - optional SQLite run-level persistence for debugging and replay
 - optional LLM-as-Judge mini evaluation with deterministic mock/fallback support
 
-This phase does not include JavaScript-rendered page extraction, semantic evidence verification, distributed execution, dynamic replan, vector memory, context compression, multi-judge voting, Bootstrap CI, Cohen's d, or external benchmark downloads.
+This phase does not include JavaScript-rendered page extraction, semantic evidence verification, distributed execution, vector memory, context compression, multi-judge voting, Bootstrap CI, Cohen's d, or external benchmark downloads.
 
 ## Directory Structure
 
@@ -159,6 +160,12 @@ python main.py --resume <run_id>
 
 Resume skips nodes that already completed successfully with checkpointed output. Failed, pending, skipped, missing, or incomplete nodes are re-executed. This is not dynamic re-planning, vector memory, cross-run semantic memory, or context compression.
 
+## Dynamic Replan
+
+The DAG executor can optionally run a deterministic `RuleBasedReplanPolicy`. `main.py` enables it for the demo. It can inject remedial nodes for failed search/reader/fetch/citation situations, record replan metadata, and use force synthesis when replan attempts are exhausted.
+
+This is not a complex LLM planner. It does not use vector memory or context compression.
+
 ## Run Evaluation
 
 ```bash
@@ -192,6 +199,7 @@ This is not multi-model judging, human annotation, or full ResearchBench.
 - provider-based search has fallback and trace metadata, but not production-grade ranking
 - robust fetch handles HTML/plain text and failure metadata, but not JavaScript rendering
 - checkpoint/resume skips completed DAG nodes but does not replan the graph
+- dynamic replan is rule-based and bounded, not an LLM planning system
 - citation grounding is rule-based and not semantic fact verification
 - async DAG execution is local asyncio scheduling, not distributed execution
 - no vector memory or embeddings
@@ -221,5 +229,6 @@ This is not multi-model judging, human annotation, or full ResearchBench.
 - Phase 16: Reliable search provider registry and fallback
 - Phase 17: Robust web fetch and lightweight content extraction
 - Phase 18: Checkpoint/resume for DAG runs
+- Phase 19: Deterministic dynamic replan for failed or insufficient DAG runs
 
-Future work can add dynamic re-planning, JavaScript-rendered page support, semantic evidence verification, better source parsing, persistent memory, richer LLM-backed agents, and stronger evaluation.
+Future work can add stronger LLM planning, JavaScript-rendered page support, semantic evidence verification, better source parsing, vector memory, context compression, and stronger evaluation.

@@ -158,8 +158,18 @@ This document defines the staged implementation plan for DeepResearchAgent.
 - Resume from completed node outputs when available
 - Re-execute failed, pending, skipped, missing, or incomplete nodes
 - Expose `main.py --resume <run_id>` for demo resume
+- Status: completed
+
+## Phase 19: Dynamic Replan
+
+- Add `ReplanTrigger` and `ReplanDecision`
+- Add deterministic `RuleBasedReplanPolicy`
+- Add `DAGReplanner` for remedial node injection
+- Trigger replan on node failure, timeout, evidence/citation insufficiency, or fetch failure
+- Bound replan attempts and support force synthesis fallback
+- Store replan metadata in execution results and checkpoints
 - Status: current phase
 
 ## Current Implementation Boundary
 
-The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM, optional provider-based web search and HTTP fetch, optional local asyncio DAG execution, node-level checkpoint/resume, optional bounded iterative Red/Blue review, optional SQLite run persistence, and optional LLM-as-Judge mini evaluation when configured. Citation grounding is rule-based through local evidence/citation IDs; the project does not perform dynamic re-planning, JavaScript-rendered page extraction, production-grade semantic extraction, semantic fact verification, distributed execution, vector retrieval, embeddings, context compression, multi-judge voting, statistical significance testing, or complex benchmark evaluation.
+The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM, optional provider-based web search and HTTP fetch, optional local asyncio DAG execution, node-level checkpoint/resume, deterministic dynamic replan, optional bounded iterative Red/Blue review, optional SQLite run persistence, and optional LLM-as-Judge mini evaluation when configured. Citation grounding is rule-based through local evidence/citation IDs; the project does not perform vector retrieval, embeddings, context compression, JavaScript-rendered page extraction, production-grade semantic extraction, semantic fact verification, distributed execution, multi-judge voting, statistical significance testing, or complex benchmark evaluation.
