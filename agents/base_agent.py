@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
+    from core.llm_client import BaseLLMClient
     from memory.store import SharedMemory
 
 
@@ -11,6 +12,7 @@ class AgentContext:
     inputs: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     memory: Optional["SharedMemory"] = None
+    llm_client: Optional["BaseLLMClient"] = None
 
 
 @dataclass

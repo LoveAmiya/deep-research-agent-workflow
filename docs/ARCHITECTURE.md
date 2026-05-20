@@ -23,10 +23,10 @@ ResearchQuestion
 - `DAGExecutor`: runs task nodes in dependency order
 - `SearcherAgent`: returns deterministic mock search results
 - `ReaderAgent`: converts mock snippets into findings
-- `WriterAgent`: synthesizes findings into a coherent report
-- `CriticAgent`: performs deterministic structural checks
-- `RedAgent`: raises rule-based review issues
-- `BlueAgent`: applies rule-based revisions
+- `WriterAgent`: synthesizes findings into a coherent report, with optional LLM assistance
+- `CriticAgent`: performs deterministic structural checks, with optional LLM notes
+- `RedAgent`: raises rule-based review issues, with optional LLM notes
+- `BlueAgent`: applies rule-based revisions, with optional LLM notes
 - `SharedMemory`: stores intermediate artifacts
 - `Evaluation`: runs local JSONL cases and deterministic metrics
 
@@ -44,4 +44,4 @@ planner_task
 
 ## Current Boundaries
 
-The current system uses mock search results and deterministic local logic. It does not implement real LLM calls, real web search, vector memory, concurrent DAG execution, LLM-as-Judge, or external benchmark downloads.
+The current system uses mock search results and deterministic local logic by default. Optional LLM calls are available for selected agents when configured, but the system does not implement real web search, webpage crawling, evidence grounding, vector memory, concurrent DAG execution, LLM-as-Judge, or external benchmark downloads.

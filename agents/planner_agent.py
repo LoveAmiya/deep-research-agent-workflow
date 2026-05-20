@@ -1,4 +1,6 @@
 from agents.base_agent import AgentContext, AgentResult, BaseAgent
+from core.llm_client import LLMMessage
+from core.prompt_loader import load_prompt
 from core.schema import ResearchPlan, ResearchQuestion
 
 
@@ -39,7 +41,24 @@ class PlannerAgent(BaseAgent):
             "role": self.role,
             "handoff": "question -> plan",
             "task_id": context.task_id,
+            "used_llm": False,
+            "llm_error": None,
+            "fallback_used": False,
         }
+        if context.llm_client is not None:
+            try:
+                prompt = load_prompt("planner")
+                context.llm_client.generate(
+                    [
+                        LLMMessage(role="system", content=prompt),
+                        LLMMessage(role="user", content=f"Research question: {base_question}"),
+                    ]
+                )
+                metadata["used_llm"] = True
+                metadata["fallback_used"] = True
+            except Exception as exc:
+                metadata["llm_error"] = str(exc)
+                metadata["fallback_used"] = True
         self._write_memory(context, plan, metadata)
         return AgentResult(
             agent_name=self.name,

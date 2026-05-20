@@ -2,7 +2,7 @@
 
 ## One-Sentence Summary
 
-DeepResearchAgent is a deterministic local multi-agent research workflow prototype with DAG orchestration, shared memory, rule-based review/revision, and local evaluation.
+DeepResearchAgent is a deterministic-by-default multi-agent research workflow prototype with optional LLM assistance, DAG orchestration, shared memory, rule-based review/revision, and local evaluation.
 
 ## Tech Stack
 
@@ -10,6 +10,7 @@ DeepResearchAgent is a deterministic local multi-agent research workflow prototy
 - `dataclasses`
 - `unittest`
 - JSONL evaluation cases
+- optional OpenAI-compatible HTTP LLM client using Python standard library
 - no external runtime dependencies in the current phase
 
 ## Core Modules
@@ -46,11 +47,12 @@ ResearchQuestion
 - single-round RedAgent / BlueAgent review and revision
 - ResearchBench-mini local evaluation with deterministic rule metrics
 - mock search pipeline that keeps runs reproducible and dependency-free
+- optional prompt system and LLM client with deterministic fallback
 
 ## Current Boundaries
 
-- no real LLM calls
 - no real web search
+- no webpage crawling or evidence grounding
 - no async or concurrent DAG execution
 - no vector database or embeddings
 - no long-term memory
@@ -68,4 +70,4 @@ ResearchQuestion
 
 ## Resume-Friendly Description
 
-Built DeepResearchAgent, a Python multi-agent research workflow prototype with role-specific agents, DAG task orchestration, shared in-memory state, rule-based Red/Blue review, and ResearchBench-mini style local evaluation. Implemented a deterministic mock search pipeline with unit-tested schemas, agent handoffs, memory writes, traceable execution, and reproducible evaluation metrics.
+Built DeepResearchAgent, a Python multi-agent research workflow prototype with role-specific agents, DAG task orchestration, shared in-memory state, optional LLM client integration, rule-based Red/Blue review, and ResearchBench-mini style local evaluation. Implemented a deterministic mock search pipeline with unit-tested schemas, agent handoffs, memory writes, traceable execution, and reproducible evaluation metrics.

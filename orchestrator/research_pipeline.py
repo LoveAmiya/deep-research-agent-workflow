@@ -72,7 +72,7 @@ def build_minimal_research_graph() -> TaskGraph:
     return graph
 
 
-def run_research_pipeline(question_text: str) -> dict:
+def run_research_pipeline(question_text: str, llm_client=None) -> dict:
     question = ResearchQuestion(question=question_text)
     planner = PlannerAgent()
     searcher = SearcherAgent()
@@ -91,6 +91,7 @@ def run_research_pipeline(question_text: str) -> dict:
                 inputs={"question": question},
                 metadata={"agent_name": planner.name},
                 memory=memory,
+                llm_client=llm_client,
             )
         ),
         "search_task": lambda outputs, node: searcher.run(
@@ -99,6 +100,7 @@ def run_research_pipeline(question_text: str) -> dict:
                 inputs={"plan": outputs["planner_task"].output},
                 metadata={"agent_name": searcher.name},
                 memory=memory,
+                llm_client=llm_client,
             )
         ),
         "reader_task": lambda outputs, node: reader.run(
@@ -107,6 +109,7 @@ def run_research_pipeline(question_text: str) -> dict:
                 inputs={"search_results": outputs["search_task"].output},
                 metadata={"agent_name": reader.name},
                 memory=memory,
+                llm_client=llm_client,
             )
         ),
         "writer_task": lambda outputs, node: writer.run(
@@ -119,6 +122,7 @@ def run_research_pipeline(question_text: str) -> dict:
                 },
                 metadata={"agent_name": writer.name},
                 memory=memory,
+                llm_client=llm_client,
             )
         ),
         "critic_task": lambda outputs, node: critic.run(
@@ -130,6 +134,7 @@ def run_research_pipeline(question_text: str) -> dict:
                 },
                 metadata={"agent_name": critic.name},
                 memory=memory,
+                llm_client=llm_client,
             )
         ),
         "red_review_task": lambda outputs, node: red.run(
@@ -142,6 +147,7 @@ def run_research_pipeline(question_text: str) -> dict:
                 },
                 metadata={"agent_name": red.name},
                 memory=memory,
+                llm_client=llm_client,
             )
         ),
         "blue_revision_task": lambda outputs, node: blue.run(
@@ -154,6 +160,7 @@ def run_research_pipeline(question_text: str) -> dict:
                 },
                 metadata={"agent_name": blue.name},
                 memory=memory,
+                llm_client=llm_client,
             )
         ),
     }

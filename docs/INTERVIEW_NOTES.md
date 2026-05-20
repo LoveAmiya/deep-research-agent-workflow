@@ -4,7 +4,7 @@
 
 DeepResearchAgent is a multi-agent research workflow prototype for complex open-ended research tasks. It takes a research question, builds a plan, creates mock search results, extracts findings, writes a markdown report, reviews it, performs one rule-based Red/Blue revision pass, stores intermediate artifacts in SharedMemory, and evaluates outputs with local rule metrics.
 
-The current version is deterministic and local. It does not call real LLMs and does not perform real web search.
+The current version is deterministic and local by default. It can optionally call an OpenAI-compatible LLM when configured, but it does not perform real web search.
 
 ## How is it different from the first Clash Royale project?
 
@@ -30,7 +30,7 @@ Each agent receives an `AgentContext` and returns an `AgentResult`.
 
 `PlannerAgent` reads a `ResearchQuestion` from `AgentContext.inputs["question"]` and returns a `ResearchPlan`. The plan contains sub-questions, mock search queries, and expected sections.
 
-It does not call an LLM.
+It can optionally call an LLM, but it falls back to deterministic planning.
 
 ## What does SearcherAgent do?
 
@@ -42,7 +42,7 @@ It does not use the internet.
 
 `ReaderAgent` reads mock search results and converts each snippet into a `Finding`. It also applies a simple local truncation helper for findings.
 
-It does not summarize with an LLM.
+It does not summarize with an LLM in the current implementation.
 
 ## What does WriterAgent do?
 
@@ -55,7 +55,7 @@ It does not summarize with an LLM.
 
 ## What does CriticAgent do?
 
-`CriticAgent` performs a deterministic structural check. It verifies that the report has a title, Key Findings, References, and non-empty citations.
+`CriticAgent` performs a deterministic structural check. It verifies that the report has a title, Key Findings, References, and non-empty citations. It can optionally attach LLM notes.
 
 It is not LLM-as-Judge.
 
@@ -120,6 +120,7 @@ The current goal is to validate architecture and data flow. Real LLM calls would
 
 - no real LLM calls
 - no real web search
+- no webpage crawling or evidence grounding
 - no concurrent DAG execution
 - no vector database
 - no embeddings

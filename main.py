@@ -1,10 +1,18 @@
+from core.config import load_llm_config_from_env
+from core.llm_client import MockLLMClient, create_llm_client
 from orchestrator.research_pipeline import run_research_pipeline
 
 
 DEMO_QUESTION = "What are the main factors that affect open-source LLM adoption in enterprises?"
 
+
 def build_demo_execution() -> dict:
-    return run_research_pipeline(DEMO_QUESTION)
+    config = load_llm_config_from_env()
+    llm_client = create_llm_client(config)
+    result = run_research_pipeline(DEMO_QUESTION, llm_client=llm_client)
+    result["llm_config"] = config
+    result["llm_client"] = llm_client
+    return result
 
 
 def build_demo_report() -> str:
@@ -24,7 +32,14 @@ def main() -> None:
     blue_revision = execution["blue_revision"]
     memory = execution["memory"]
     final_report = execution["report"]
+    llm_config = execution["llm_config"]
+    llm_client = execution["llm_client"]
 
+    print(f"LLM enabled: {llm_config.enabled}")
+    print(f"LLM provider/model: {llm_config.provider}/{llm_config.model or 'not-configured'}")
+    if isinstance(llm_client, MockLLMClient):
+        print("LLM mode: mock")
+    print()
     print(final_report.markdown)
     print()
     print(f"Critic review passed: {critic_review['passed']}")

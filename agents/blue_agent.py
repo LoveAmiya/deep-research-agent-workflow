@@ -2,6 +2,8 @@ from dataclasses import replace
 from typing import List
 
 from agents.base_agent import AgentContext, AgentResult, BaseAgent
+from core.llm_client import LLMMessage
+from core.prompt_loader import load_prompt
 from core.schema import BlueRevisionResult, Finding, RedReviewResult, ResearchReport
 
 
@@ -48,6 +50,23 @@ class BlueAgent(BaseAgent):
             else:
                 remaining_issue_ids.append(issue.issue_id)
 
+        llm_error = None
+        used_llm = False
+        fallback_used = False
+        if context.llm_client is not None:
+            try:
+                response = context.llm_client.generate(
+                    [
+                        LLMMessage(role="system", content=load_prompt("blue_agent")),
+                        LLMMessage(role="user", content=revised_report.markdown),
+                    ]
+                )
+                revision_notes.append(f"LLM revision notes: {response.content}")
+                used_llm = True
+            except Exception as exc:
+                llm_error = str(exc)
+                fallback_used = True
+
         result = BlueRevisionResult(
             revised_report=revised_report,
             fixed_issue_ids=fixed_issue_ids,
@@ -60,6 +79,9 @@ class BlueAgent(BaseAgent):
             "task_id": context.task_id,
             "fixed_issue_count": len(fixed_issue_ids),
             "remaining_issue_count": len(remaining_issue_ids),
+            "used_llm": used_llm,
+            "llm_error": llm_error,
+            "fallback_used": fallback_used,
         }
         self._write_memory(context, result, metadata)
         return AgentResult(

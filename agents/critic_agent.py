@@ -1,4 +1,6 @@
 from agents.base_agent import AgentContext, AgentResult, BaseAgent
+from core.llm_client import LLMMessage
+from core.prompt_loader import load_prompt
 from core.schema import ResearchReport
 
 
@@ -51,7 +53,23 @@ class CriticAgent(BaseAgent):
             "role": self.role,
             "handoff": "report -> review",
             "task_id": context.task_id,
+            "used_llm": False,
+            "llm_error": None,
+            "fallback_used": False,
         }
+        if context.llm_client is not None:
+            try:
+                response = context.llm_client.generate(
+                    [
+                        LLMMessage(role="system", content=load_prompt("critic")),
+                        LLMMessage(role="user", content=report.markdown),
+                    ]
+                )
+                review["llm_notes"] = response.content
+                metadata["used_llm"] = True
+            except Exception as exc:
+                metadata["llm_error"] = str(exc)
+                metadata["fallback_used"] = True
         self._write_memory(context, review, metadata)
         return AgentResult(
             agent_name=self.name,

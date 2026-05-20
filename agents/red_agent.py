@@ -1,4 +1,6 @@
 from agents.base_agent import AgentContext, AgentResult, BaseAgent
+from core.llm_client import LLMMessage
+from core.prompt_loader import load_prompt
 from core.schema import Finding, RedReviewResult, ResearchReport, ReviewIssue
 
 
@@ -143,7 +145,23 @@ class RedAgent(BaseAgent):
             "handoff": "report -> red_review",
             "task_id": context.task_id,
             "issue_count": len(result.issues),
+            "used_llm": False,
+            "llm_error": None,
+            "fallback_used": False,
         }
+        if context.llm_client is not None:
+            try:
+                response = context.llm_client.generate(
+                    [
+                        LLMMessage(role="system", content=load_prompt("red_agent")),
+                        LLMMessage(role="user", content=report.markdown),
+                    ]
+                )
+                metadata["llm_review_notes"] = response.content
+                metadata["used_llm"] = True
+            except Exception as exc:
+                metadata["llm_error"] = str(exc)
+                metadata["fallback_used"] = True
         self._write_memory(context, result, metadata)
         return AgentResult(
             agent_name=self.name,

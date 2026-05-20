@@ -66,8 +66,17 @@ This document defines the staged implementation plan for DeepResearchAgent.
 - Check documentation consistency against the implemented code
 - Remove generated caches and temporary artifacts from the package
 - Create the final distributable zip archive
-- Status: current packaging phase
+- Status: completed prototype backup
+
+## Phase 9: LLM Client and Prompt System
+
+- Add LLM configuration loading from environment variables
+- Add `MockLLMClient` for deterministic tests and fallback
+- Add OpenAI-compatible HTTP client using Python standard library
+- Add prompt templates for Planner, Writer, Critic, Red, and Blue agents
+- Allow selected agents to optionally call LLM and fall back to deterministic local logic
+- Status: current phase
 
 ## Current Implementation Boundary
 
-The project remains a deterministic local prototype. It does not perform real LLM calls, real online search, concurrent DAG execution, vector retrieval, LLM-as-Judge, or complex benchmark evaluation.
+The project remains deterministic by default and uses mock search. It can optionally call an OpenAI-compatible LLM when configured, but it does not perform real online search, webpage crawling, evidence grounding, concurrent DAG execution, vector retrieval, LLM-as-Judge, or complex benchmark evaluation.
