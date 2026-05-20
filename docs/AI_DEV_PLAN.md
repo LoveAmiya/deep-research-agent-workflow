@@ -168,8 +168,26 @@ This document defines the staged implementation plan for DeepResearchAgent.
 - Trigger replan on node failure, timeout, evidence/citation insufficiency, or fetch failure
 - Bound replan attempts and support force synthesis fallback
 - Store replan metadata in execution results and checkpoints
+- Status: completed
+
+## Phase 20: Vector Memory / Evidence Memory Store
+
+- Add local memory schemas for evidence, citation, summary, node output, and failure records
+- Add deterministic hash embeddings for offline tests and demos
+- Add SQLite-backed vector memory storage and cosine similarity search
+- Add optional integration helpers for persisting pipeline artifacts
+- Keep external vector databases and real embedding APIs out of scope
+- Status: completed
+
+## Phase 21: Context Compression
+
+- Add deterministic context compression for evidence, citation, summary, node output, and memory item inputs
+- Add L1 embedding coarse filtering with local hash embeddings
+- Add lightweight TextRank sentence reranking without external dependencies
+- Preserve citations, source URLs, titles, quotes, and metadata in compressed contexts
+- Keep compression optional and separate from checkpoint, replan, and vector memory storage
 - Status: current phase
 
 ## Current Implementation Boundary
 
-The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM, optional provider-based web search and HTTP fetch, optional local asyncio DAG execution, node-level checkpoint/resume, deterministic dynamic replan, optional bounded iterative Red/Blue review, optional SQLite run persistence, and optional LLM-as-Judge mini evaluation when configured. Citation grounding is rule-based through local evidence/citation IDs; the project does not perform vector retrieval, embeddings, context compression, JavaScript-rendered page extraction, production-grade semantic extraction, semantic fact verification, distributed execution, multi-judge voting, statistical significance testing, or complex benchmark evaluation.
+The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM, optional provider-based web search and HTTP fetch, optional local asyncio DAG execution, node-level checkpoint/resume, deterministic dynamic replan, optional bounded iterative Red/Blue review, optional SQLite run persistence, optional local SQLite vector memory, optional local context compression, and optional LLM-as-Judge mini evaluation when configured. Citation grounding is rule-based through local evidence/citation IDs; the project does not perform JavaScript-rendered page extraction, production-grade semantic extraction, semantic fact verification, distributed execution, multi-judge voting, statistical significance testing, complex benchmark evaluation, external vector database retrieval, or real embedding API calls.

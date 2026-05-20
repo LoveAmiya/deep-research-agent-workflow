@@ -1,5 +1,6 @@
 from orchestrator.async_executor import AsyncDAGExecutor
 from orchestrator.checkpoint import JSONCheckpointStore, RunCheckpoint
+from memory.integration import persist_pipeline_result_to_vector_memory
 from orchestrator.research_pipeline import (
     build_research_pipeline_components,
     build_research_pipeline_result,
@@ -28,6 +29,7 @@ async def async_run_research_pipeline(
     max_replan_attempts: int = 2,
     max_failed_nodes_before_force_synthesis: int = 3,
     force_synthesis_on_replan_exhausted: bool = True,
+    vector_memory_store=None,
 ) -> dict:
     checkpoint, checkpoint_store, resumed, resume_missing = _prepare_checkpoint(
         question_text=question_text,
@@ -61,7 +63,7 @@ async def async_run_research_pipeline(
         max_failed_nodes_before_force_synthesis=max_failed_nodes_before_force_synthesis,
         force_synthesis_on_replan_exhausted=force_synthesis_on_replan_exhausted,
     ).execute()
-    return build_research_pipeline_result(
+    result = build_research_pipeline_result(
         question=components["question"],
         memory=components["memory"],
         citation_registry=components["citation_registry"],
@@ -71,6 +73,13 @@ async def async_run_research_pipeline(
         checkpoint=checkpoint,
         resume_missing=resume_missing,
     )
+    if vector_memory_store is not None:
+        result["vector_memory_ids"] = persist_pipeline_result_to_vector_memory(
+            result,
+            vector_memory_store,
+            run_id=result.get("run_id"),
+        )
+    return result
 
 
 def _prepare_checkpoint(

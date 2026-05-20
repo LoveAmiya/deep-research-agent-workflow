@@ -2,7 +2,7 @@
 
 ## One-Sentence Summary
 
-DeepResearchAgent is a deterministic-by-default multi-agent research workflow prototype with optional LLM assistance, provider-based optional web search and robust web fetch, citation grounding, sync/async DAG orchestration, checkpoint/resume, rule-based dynamic replan, shared memory, bounded rule-based Red/Blue review/revision, SQLite run persistence, optional LLM-as-Judge mini-evaluation, and local rule evaluation.
+DeepResearchAgent is a deterministic-by-default multi-agent research workflow prototype with optional LLM assistance, provider-based optional web search and robust web fetch, citation grounding, sync/async DAG orchestration, checkpoint/resume, rule-based dynamic replan, shared memory, SQLite vector memory, context compression, bounded rule-based Red/Blue review/revision, SQLite run persistence, optional LLM-as-Judge mini-evaluation, and local rule evaluation.
 
 ## Tech Stack
 
@@ -16,6 +16,8 @@ DeepResearchAgent is a deterministic-by-default multi-agent research workflow pr
 - lightweight HTML title/main text extraction using Python standard library
 - JSON checkpoint/resume using Python standard library
 - deterministic rule-based replan policy and DAG replanner
+- deterministic hash embeddings for local vector memory and context compression
+- lightweight TextRank-style context compression
 - no external runtime dependencies in the current phase
 
 ## Core Modules
@@ -26,8 +28,9 @@ DeepResearchAgent is a deterministic-by-default multi-agent research workflow pr
 - `orchestrator/`: DAG nodes, graph validation, sync/async executors, trace recording, and pipeline runner
 - `orchestrator/checkpoint.py`: JSON checkpoint store and run/node checkpoint data structures
 - `orchestrator/replan.py` and `orchestrator/dag_replanner.py`: deterministic replan policy and remedial DAG mutation
-- `memory/`: in-memory shared memory store and simple finding truncation helper
+- `memory/`: in-memory shared memory store, local SQLite vector memory, and simple finding truncation helper
 - `memory/persistent_store.py`: optional SQLite run-level persistence
+- `compression/`: optional L1/L2/L3 context compression with source-preserving evidence selection
 - `tools/`: mock and optional web search/fetch tools
 - `search/`: search provider abstractions, provider responses, web fetchers, content extraction, and fallback registry
 - `tools/citation_tool.py`: in-memory evidence/citation registry and validator
@@ -59,6 +62,8 @@ ResearchQuestion
 - JSON checkpoint/resume that skips completed nodes and re-executes incomplete nodes
 - bounded rule-based replan with remedial nodes and force synthesis fallback
 - SharedMemory for intermediate artifacts
+- SQLite vector memory for persisted evidence, citations, summaries, node outputs, and failures
+- optional context compression that preserves citations, source URLs, titles, and short quotes
 - rule-based CriticAgent checks
 - single-round RedAgent / BlueAgent review and revision
 - optional iterative Red/Blue loop with convergence and oscillation guards
@@ -79,10 +84,11 @@ ResearchQuestion
 - HTML extraction is lightweight and does not execute JavaScript-rendered pages
 - citation grounding is rule-based and does not perform semantic fact verification
 - async DAG execution is local asyncio scheduling, not distributed execution
-- no vector database or embeddings
-- no long-term memory
+- no external vector database or real embedding API
+- vector memory is local SQLite storage, not complex long-term semantic memory
 - checkpoint/resume is node-level execution recovery, not semantic memory or dynamic replan
 - dynamic replan is deterministic and bounded, not a complex LLM planner
+- context compression is deterministic and local, not LLM summarization
 - LLM-as-Judge is optional and does not include multi-judge voting or external fact verification
 - no complex scoring or adversarial training
 - no complex benchmark framework
@@ -92,8 +98,7 @@ ResearchQuestion
 - stronger LLM planning, JavaScript-rendered page support, and stronger source parsing behind the current provider/fetch interfaces
 - LLM-backed planning, reading, writing, and critique behind existing agent interfaces
 - source parsing and citation grounding
-- persistent memory store
-- richer evaluation datasets and human review
+- richer memory retrieval and human review
 - concurrency after DAG correctness is stable
 
 ## Resume-Friendly Description
