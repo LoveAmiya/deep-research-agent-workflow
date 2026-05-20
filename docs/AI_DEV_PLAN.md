@@ -148,8 +148,18 @@ This document defines the staged implementation plan for DeepResearchAgent.
 - Track timeout, retry, content type, truncation, and error metadata
 - Let `ReaderAgent` use web fetchers before falling back to snippets
 - Keep tests deterministic without real network access
+- Status: completed
+
+## Phase 18: Checkpoint / Resume for DAG Runs
+
+- Add `RunCheckpoint` and `NodeCheckpoint`
+- Add `CheckpointStore` and `JSONCheckpointStore`
+- Save checkpoints on node state transitions
+- Resume from completed node outputs when available
+- Re-execute failed, pending, skipped, missing, or incomplete nodes
+- Expose `main.py --resume <run_id>` for demo resume
 - Status: current phase
 
 ## Current Implementation Boundary
 
-The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM, optional provider-based web search and HTTP fetch, optional local asyncio DAG execution, optional bounded iterative Red/Blue review, optional SQLite run persistence, and optional LLM-as-Judge mini evaluation when configured. Citation grounding is rule-based through local evidence/citation IDs; the project does not perform JavaScript-rendered page extraction, production-grade semantic extraction, semantic fact verification, distributed execution, checkpoint/resume, vector retrieval, embeddings, context compression, multi-judge voting, statistical significance testing, or complex benchmark evaluation.
+The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM, optional provider-based web search and HTTP fetch, optional local asyncio DAG execution, node-level checkpoint/resume, optional bounded iterative Red/Blue review, optional SQLite run persistence, and optional LLM-as-Judge mini evaluation when configured. Citation grounding is rule-based through local evidence/citation IDs; the project does not perform dynamic re-planning, JavaScript-rendered page extraction, production-grade semantic extraction, semantic fact verification, distributed execution, vector retrieval, embeddings, context compression, multi-judge voting, statistical significance testing, or complex benchmark evaluation.

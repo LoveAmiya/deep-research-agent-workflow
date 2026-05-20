@@ -6,6 +6,7 @@ DeepResearchAgent is a multi-agent research workflow prototype. The current impl
 ResearchQuestion
   -> PlannerAgent
   -> DAGExecutor
+  -> CheckpointStore
   -> SearcherAgent
   -> SearchProviderRegistry
   -> ReaderAgent
@@ -25,6 +26,7 @@ ResearchQuestion
 - `PlannerAgent`: decomposes the task into actionable steps
 - `DAGExecutor`: runs task nodes in dependency order
 - `AsyncDAGExecutor`: optional asyncio executor for dependency-ready concurrent task scheduling
+- `CheckpointStore`: saves and loads node-level execution checkpoints for resume
 - `SearcherAgent`: returns deterministic mock search results by default, or provider/tool-backed web search results when configured
 - `SearchProviderRegistry`: coordinates ordered search providers, fallback, and provider trace metadata
 - `ReaderAgent`: converts snippets into findings by default, or web-fetched/extracted page text into findings
@@ -54,4 +56,4 @@ planner_task
 
 ## Current Boundaries
 
-The current system uses mock search/fetch and deterministic local logic by default. Optional LLM calls, optional provider-based web search and HTTP fetch, optional local asyncio DAG execution, and optional bounded iterative Red/Blue review are available when configured. Citation grounding is local and rule-based; the system does not implement JavaScript-rendered page extraction, production-grade webpage parsing, semantic evidence verification, vector memory, distributed execution, checkpoint/resume, context compression, complex scoring, or external benchmark downloads.
+The current system uses mock search/fetch and deterministic local logic by default. Optional LLM calls, optional provider-based web search and HTTP fetch, optional local asyncio DAG execution, checkpoint/resume, and optional bounded iterative Red/Blue review are available when configured. Citation grounding is local and rule-based; the system does not implement dynamic re-planning, JavaScript-rendered page extraction, production-grade webpage parsing, semantic evidence verification, vector memory, distributed execution, context compression, complex scoring, or external benchmark downloads.

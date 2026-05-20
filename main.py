@@ -1,4 +1,5 @@
 import asyncio
+import sys
 
 from core.config import (
     load_dag_execution_config_from_env,
@@ -20,9 +21,10 @@ from tools.search_tool import MockSearchTool, create_search_tool
 
 
 DEMO_QUESTION = "What are the main factors that affect open-source LLM adoption in enterprises?"
+DEFAULT_CHECKPOINT_DIR = "runs/checkpoints"
 
 
-def build_demo_execution(load_dotenv: bool = False) -> dict:
+def build_demo_execution(load_dotenv: bool = False, resume_from_run_id: str | None = None) -> dict:
     llm_config = load_llm_config_from_env(load_dotenv=load_dotenv)
     search_config = load_search_config_from_env(load_dotenv=load_dotenv)
     dag_config = load_dag_execution_config_from_env(load_dotenv=load_dotenv)
@@ -53,6 +55,9 @@ def build_demo_execution(load_dotenv: bool = False) -> dict:
                 task_timeout_seconds=dag_config.task_timeout_seconds,
                 use_red_blue_loop=red_blue_loop_execution_config.enabled,
                 red_blue_loop_config=red_blue_loop_config,
+                checkpoint_enabled=True,
+                resume_from_run_id=resume_from_run_id,
+                checkpoint_dir=DEFAULT_CHECKPOINT_DIR,
             )
         )
     else:
@@ -67,6 +72,9 @@ def build_demo_execution(load_dotenv: bool = False) -> dict:
             web_fetcher=web_fetcher,
             use_red_blue_loop=red_blue_loop_execution_config.enabled,
             red_blue_loop_config=red_blue_loop_config,
+            checkpoint_enabled=True,
+            resume_from_run_id=resume_from_run_id,
+            checkpoint_dir=DEFAULT_CHECKPOINT_DIR,
         )
     result["llm_config"] = llm_config
     result["llm_client"] = llm_client
@@ -92,7 +100,8 @@ def build_demo_review() -> dict:
 
 
 def main() -> None:
-    execution = build_demo_execution(load_dotenv=True)
+    resume_from_run_id = _parse_resume_arg(sys.argv[1:])
+    execution = build_demo_execution(load_dotenv=True, resume_from_run_id=resume_from_run_id)
     critic_review = execution["critic_review"]
     red_review = execution["red_review"]
     blue_revision = execution["blue_revision"]
@@ -113,7 +122,18 @@ def main() -> None:
     dag_outputs = execution["execution"].outputs
     search_metadata = dag_outputs["search_task"].metadata
     reader_metadata = dag_outputs["reader_task"].metadata
+    checkpoint_metadata = execution.get("checkpoint_metadata", {})
 
+    print(f"Run ID: {execution.get('run_id')}")
+    print(f"Checkpoint enabled: {checkpoint_metadata.get('checkpoint_enabled')}")
+    print(f"Checkpoint path: {checkpoint_metadata.get('checkpoint_path')}")
+    print(f"Checkpoint save count: {checkpoint_metadata.get('checkpoint_save_count')}")
+    print(f"Resumed: {checkpoint_metadata.get('resumed')}")
+    print(f"Resumed from run_id: {checkpoint_metadata.get('resumed_from_run_id')}")
+    print(f"Skipped node count: {checkpoint_metadata.get('skipped_node_count')}")
+    print(f"Reexecuted node count: {checkpoint_metadata.get('reexecuted_node_count')}")
+    if checkpoint_metadata.get("resume_checkpoint_missing"):
+        print(f"Resume checkpoint missing; started a new run for requested id: {resume_from_run_id}")
     print(f"LLM enabled: {llm_config.enabled}")
     print(f"LLM provider/model: {llm_config.provider}/{llm_config.model or 'not-configured'}")
     if isinstance(llm_client, MockLLMClient):
@@ -178,6 +198,14 @@ def main() -> None:
         "blue_revision",
     ]:
         print(f"- {item_type}: {len(memory.list_by_type(item_type))}")
+
+
+def _parse_resume_arg(args: list[str]) -> str | None:
+    if not args:
+        return None
+    if args[0] == "--resume" and len(args) >= 2:
+        return args[1]
+    return None
 
 
 if __name__ == "__main__":

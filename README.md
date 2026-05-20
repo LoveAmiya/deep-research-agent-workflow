@@ -6,7 +6,7 @@ The current implementation is a deterministic local prototype by default. Search
 
 ## Current Status
 
-The repository is currently at Phase 17: Robust Web Fetch and Content Extraction.
+The repository is currently at Phase 18: Checkpoint / Resume for DAG Runs.
 
 Implemented capabilities:
 
@@ -24,13 +24,14 @@ Implemented capabilities:
 - optional standard-library web search and webpage fetch with mock fallback
 - provider-based search registry with deterministic mock fallback
 - robust web fetcher abstraction with lightweight HTML title/main text extraction
+- JSON checkpoint/resume for DAG runs
 - lightweight evidence spans, citation IDs, citation markers, and citation validation
 - optional asyncio DAG executor with max concurrency, timeout, and async traces
 - optional iterative rule-based Red/Blue review loop with bounded convergence checks
 - optional SQLite run-level persistence for debugging and replay
 - optional LLM-as-Judge mini evaluation with deterministic mock/fallback support
 
-This phase does not include JavaScript-rendered page extraction, semantic evidence verification, distributed execution, checkpoint/resume, vector memory, context compression, multi-judge voting, Bootstrap CI, Cohen's d, or external benchmark downloads.
+This phase does not include JavaScript-rendered page extraction, semantic evidence verification, distributed execution, dynamic replan, vector memory, context compression, multi-judge voting, Bootstrap CI, Cohen's d, or external benchmark downloads.
 
 ## Directory Structure
 
@@ -142,6 +143,22 @@ python main.py
 
 This stores run-level artifacts for debugging. It is not vector memory, embedding retrieval, checkpoint/resume, or long-term user memory.
 
+## Checkpoint / Resume
+
+`main.py` saves DAG checkpoints by default under:
+
+```text
+runs/checkpoints/
+```
+
+Run the demo normally and note the printed `Run ID`, then resume with:
+
+```bash
+python main.py --resume <run_id>
+```
+
+Resume skips nodes that already completed successfully with checkpointed output. Failed, pending, skipped, missing, or incomplete nodes are re-executed. This is not dynamic re-planning, vector memory, cross-run semantic memory, or context compression.
+
 ## Run Evaluation
 
 ```bash
@@ -174,6 +191,7 @@ This is not multi-model judging, human annotation, or full ResearchBench.
 - real web search and webpage fetch are optional and lightweight, not production-grade
 - provider-based search has fallback and trace metadata, but not production-grade ranking
 - robust fetch handles HTML/plain text and failure metadata, but not JavaScript rendering
+- checkpoint/resume skips completed DAG nodes but does not replan the graph
 - citation grounding is rule-based and not semantic fact verification
 - async DAG execution is local asyncio scheduling, not distributed execution
 - no vector memory or embeddings
@@ -202,5 +220,6 @@ This is not multi-model judging, human annotation, or full ResearchBench.
 - Phase 15: Optional LLM-as-Judge mini evaluation
 - Phase 16: Reliable search provider registry and fallback
 - Phase 17: Robust web fetch and lightweight content extraction
+- Phase 18: Checkpoint/resume for DAG runs
 
-Future work can add JavaScript-rendered page support, semantic evidence verification, better source parsing, persistent memory, richer LLM-backed agents, and stronger evaluation.
+Future work can add dynamic re-planning, JavaScript-rendered page support, semantic evidence verification, better source parsing, persistent memory, richer LLM-backed agents, and stronger evaluation.

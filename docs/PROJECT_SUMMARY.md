@@ -2,7 +2,7 @@
 
 ## One-Sentence Summary
 
-DeepResearchAgent is a deterministic-by-default multi-agent research workflow prototype with optional LLM assistance, provider-based optional web search and robust web fetch, citation grounding, sync/async DAG orchestration, shared memory, bounded rule-based Red/Blue review/revision, SQLite run persistence, optional LLM-as-Judge mini-evaluation, and local rule evaluation.
+DeepResearchAgent is a deterministic-by-default multi-agent research workflow prototype with optional LLM assistance, provider-based optional web search and robust web fetch, citation grounding, sync/async DAG orchestration, checkpoint/resume, shared memory, bounded rule-based Red/Blue review/revision, SQLite run persistence, optional LLM-as-Judge mini-evaluation, and local rule evaluation.
 
 ## Tech Stack
 
@@ -14,6 +14,7 @@ DeepResearchAgent is a deterministic-by-default multi-agent research workflow pr
 - optional DuckDuckGo HTML search and simple webpage fetch using Python standard library
 - provider-based search registry with mock fallback
 - lightweight HTML title/main text extraction using Python standard library
+- JSON checkpoint/resume using Python standard library
 - no external runtime dependencies in the current phase
 
 ## Core Modules
@@ -22,6 +23,7 @@ DeepResearchAgent is a deterministic-by-default multi-agent research workflow pr
 - `agents/`: planner, searcher, reader, writer, critic, red, and blue agents
 - `agents/red_blue_loop.py`: optional bounded iterative Red/Blue runner
 - `orchestrator/`: DAG nodes, graph validation, sync/async executors, trace recording, and pipeline runner
+- `orchestrator/checkpoint.py`: JSON checkpoint store and run/node checkpoint data structures
 - `memory/`: in-memory shared memory store and simple finding truncation helper
 - `memory/persistent_store.py`: optional SQLite run-level persistence
 - `tools/`: mock and optional web search/fetch tools
@@ -52,6 +54,7 @@ ResearchQuestion
 - multi-agent role separation through `AgentContext` and `AgentResult`
 - DAG task graph with dependency validation and sequential topological execution
 - optional asyncio DAG executor with max concurrency, timeout, and failure propagation
+- JSON checkpoint/resume that skips completed nodes and re-executes incomplete nodes
 - SharedMemory for intermediate artifacts
 - rule-based CriticAgent checks
 - single-round RedAgent / BlueAgent review and revision
@@ -75,14 +78,14 @@ ResearchQuestion
 - async DAG execution is local asyncio scheduling, not distributed execution
 - no vector database or embeddings
 - no long-term memory
-- no checkpoint/resume
+- checkpoint/resume is node-level execution recovery, not semantic memory or dynamic replan
 - LLM-as-Judge is optional and does not include multi-judge voting or external fact verification
 - no complex scoring or adversarial training
 - no complex benchmark framework
 
 ## Future Extensions
 
-- JavaScript-rendered page support and stronger source parsing behind the current provider/fetch interfaces
+- dynamic re-planning, JavaScript-rendered page support, and stronger source parsing behind the current provider/fetch interfaces
 - LLM-backed planning, reading, writing, and critique behind existing agent interfaces
 - source parsing and citation grounding
 - persistent memory store
@@ -91,4 +94,4 @@ ResearchQuestion
 
 ## Resume-Friendly Description
 
-Built DeepResearchAgent, a Python multi-agent research workflow prototype with role-specific agents, DAG task orchestration, shared in-memory state, optional LLM and provider-based web search/fetch integrations, rule-based Red/Blue review, and ResearchBench-mini style local evaluation. Implemented deterministic mock defaults with unit-tested schemas, agent handoffs, memory writes, traceable execution, fallback behavior, and reproducible evaluation metrics.
+Built DeepResearchAgent, a Python multi-agent research workflow prototype with role-specific agents, DAG task orchestration, checkpoint/resume, shared in-memory state, optional LLM and provider-based web search/fetch integrations, rule-based Red/Blue review, and ResearchBench-mini style local evaluation. Implemented deterministic mock defaults with unit-tested schemas, agent handoffs, memory writes, traceable execution, fallback behavior, and reproducible evaluation metrics.
