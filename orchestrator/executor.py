@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional
 
+from agents.base_agent import AgentResult
 from orchestrator.dag import TaskGraph, TaskNode
 from orchestrator.state import TaskState
 from orchestrator.trace import TraceRecorder
@@ -59,6 +60,8 @@ class DAGExecutor:
             try:
                 handler = self.handlers[node.task_id]
                 outputs[node.task_id] = handler(outputs, node)
+                if isinstance(outputs[node.task_id], AgentResult) and not outputs[node.task_id].success:
+                    raise RuntimeError(outputs[node.task_id].error or "Agent returned unsuccessful result.")
             except Exception as exc:
                 states[node.task_id] = TaskState.FAILED
                 self.trace_recorder.record(

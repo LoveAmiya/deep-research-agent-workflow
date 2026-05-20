@@ -1,6 +1,6 @@
 from typing import List
 
-from agents.base_agent import BaseAgent
+from agents.base_agent import AgentContext, AgentResult, BaseAgent
 from core.schema import Finding, ResearchPlan, ResearchQuestion, ResearchReport
 
 
@@ -8,12 +8,32 @@ class WriterAgent(BaseAgent):
     def __init__(self) -> None:
         super().__init__(name="WriterAgent", role="writer")
 
-    def run(
-        self,
-        question: ResearchQuestion,
-        plan: ResearchPlan,
-        findings: List[Finding],
-    ) -> ResearchReport:
+    def run(self, context: AgentContext) -> AgentResult:
+        question = context.inputs["question"]
+        plan = context.inputs["plan"]
+        findings = context.inputs["findings"]
+        if not isinstance(question, ResearchQuestion):
+            return AgentResult(
+                agent_name=self.name,
+                success=False,
+                error="WriterAgent expected a ResearchQuestion in context.inputs['question'].",
+                metadata={"role": self.role, "handoff": "findings -> report"},
+            )
+        if not isinstance(plan, ResearchPlan):
+            return AgentResult(
+                agent_name=self.name,
+                success=False,
+                error="WriterAgent expected a ResearchPlan in context.inputs['plan'].",
+                metadata={"role": self.role, "handoff": "findings -> report"},
+            )
+        if not isinstance(findings, list):
+            return AgentResult(
+                agent_name=self.name,
+                success=False,
+                error="WriterAgent expected a list of Finding in context.inputs['findings'].",
+                metadata={"role": self.role, "handoff": "findings -> report"},
+            )
+
         background = (
             f"This mock research report examines the question: {question.question}. "
             "The current pipeline is deterministic and uses placeholder evidence rather than real web or model calls."
@@ -32,16 +52,26 @@ class WriterAgent(BaseAgent):
             {"title": "Conclusion", "content": conclusion},
         ]
         markdown = self._build_markdown(question, sections, references)
-        return ResearchReport(
-            title=f"Research Report: {question.question}",
-            question=question.question,
-            sections=sections,
-            citations=references,
-            markdown=markdown,
-            question_id=question.question_id,
-            findings=findings,
-            references=references,
-            summary=plan.objective,
+        return AgentResult(
+            agent_name=self.name,
+            success=True,
+            output=ResearchReport(
+                title=f"Research Report: {question.question}",
+                question=question.question,
+                sections=sections,
+                citations=references,
+                markdown=markdown,
+                question_id=question.question_id,
+                findings=findings,
+                references=references,
+                summary=plan.objective,
+            ),
+            metadata={
+                "role": self.role,
+                "handoff": "findings -> report",
+                "task_id": context.task_id,
+                "citation_count": len(references),
+            },
         )
 
     @staticmethod

@@ -34,4 +34,12 @@ def build_minimal_research_graph() -> TaskGraph:
             depends_on=["reader_task"],
         )
     )
+    graph.add_node(
+        TaskNode(
+            task_id="critic_task",
+            name="Critic Task",
+            agent_name="CriticAgent",
+            depends_on=["writer_task"],
+        )
+    )
     return graph

@@ -1,6 +1,6 @@
 from typing import List
 
-from agents.base_agent import BaseAgent
+from agents.base_agent import AgentContext, AgentResult, BaseAgent
 from core.schema import ResearchPlan, SearchResult
 
 
@@ -8,7 +8,16 @@ class SearcherAgent(BaseAgent):
     def __init__(self) -> None:
         super().__init__(name="SearcherAgent", role="searcher")
 
-    def run(self, plan: ResearchPlan) -> List[SearchResult]:
+    def run(self, context: AgentContext) -> AgentResult:
+        plan = context.inputs["plan"]
+        if not isinstance(plan, ResearchPlan):
+            return AgentResult(
+                agent_name=self.name,
+                success=False,
+                error="SearcherAgent expected a ResearchPlan in context.inputs['plan'].",
+                metadata={"role": self.role, "handoff": "plan -> search_results"},
+            )
+
         results: List[SearchResult] = []
         for index, query in enumerate(plan.search_queries, start=1):
             snippet = (
@@ -23,4 +32,14 @@ class SearcherAgent(BaseAgent):
                     source="mock",
                 )
             )
-        return results
+        return AgentResult(
+            agent_name=self.name,
+            success=True,
+            output=results,
+            metadata={
+                "role": self.role,
+                "handoff": "plan -> search_results",
+                "task_id": context.task_id,
+                "result_count": len(results),
+            },
+        )

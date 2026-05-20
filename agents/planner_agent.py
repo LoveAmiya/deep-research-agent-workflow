@@ -1,4 +1,4 @@
-from agents.base_agent import BaseAgent
+from agents.base_agent import AgentContext, AgentResult, BaseAgent
 from core.schema import ResearchPlan, ResearchQuestion
 
 
@@ -6,7 +6,16 @@ class PlannerAgent(BaseAgent):
     def __init__(self) -> None:
         super().__init__(name="PlannerAgent", role="planner")
 
-    def run(self, question: ResearchQuestion) -> ResearchPlan:
+    def run(self, context: AgentContext) -> AgentResult:
+        question = context.inputs["question"]
+        if not isinstance(question, ResearchQuestion):
+            return AgentResult(
+                agent_name=self.name,
+                success=False,
+                error="PlannerAgent expected a ResearchQuestion in context.inputs['question'].",
+                metadata={"role": self.role, "handoff": "question -> plan"},
+            )
+
         base_question = question.question.strip()
         sub_questions = [
             f"What is the current enterprise context for {base_question}?",
@@ -19,10 +28,19 @@ class PlannerAgent(BaseAgent):
             f"{base_question} enterprise adoption challenges",
         ]
         expected_sections = ["Background", "Key Findings", "Conclusion"]
-        return ResearchPlan(
-            question=base_question,
-            sub_questions=sub_questions,
-            search_queries=search_queries,
-            expected_sections=expected_sections,
-            question_id=question.question_id,
+        return AgentResult(
+            agent_name=self.name,
+            success=True,
+            output=ResearchPlan(
+                question=base_question,
+                sub_questions=sub_questions,
+                search_queries=search_queries,
+                expected_sections=expected_sections,
+                question_id=question.question_id,
+            ),
+            metadata={
+                "role": self.role,
+                "handoff": "question -> plan",
+                "task_id": context.task_id,
+            },
         )

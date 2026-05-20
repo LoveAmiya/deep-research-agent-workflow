@@ -1,5 +1,7 @@
 import unittest
 
+from agents.base_agent import AgentContext
+from agents.critic_agent import CriticAgent
 from agents.planner_agent import PlannerAgent
 from agents.reader_agent import ReaderAgent
 from agents.searcher_agent import SearcherAgent
@@ -28,7 +30,7 @@ class TestTaskGraph(unittest.TestCase):
 
         self.assertEqual(
             [node.task_id for node in order],
-            ["planner_task", "search_task", "reader_task", "writer_task"],
+            ["planner_task", "search_task", "reader_task", "writer_task", "critic_task"],
         )
 
     def test_missing_dependency_raises_error(self) -> None:
@@ -77,27 +79,60 @@ class TestDAGExecutor(unittest.TestCase):
         self.searcher = SearcherAgent()
         self.reader = ReaderAgent()
         self.writer = WriterAgent()
+        self.critic = CriticAgent()
 
     def test_executor_runs_pipeline_in_order(self) -> None:
         graph = build_minimal_research_graph()
         call_order = []
         handlers = {
             "planner_task": lambda outputs, node: self._record_and_run(
-                call_order, "planner_task", self.planner.run, self.question
+                call_order,
+                "planner_task",
+                self.planner.run,
+                AgentContext(task_id="planner_task", inputs={"question": self.question}),
             ),
             "search_task": lambda outputs, node: self._record_and_run(
-                call_order, "search_task", self.searcher.run, outputs["planner_task"]
+                call_order,
+                "search_task",
+                self.searcher.run,
+                AgentContext(
+                    task_id="search_task",
+                    inputs={"plan": outputs["planner_task"].output},
+                ),
             ),
             "reader_task": lambda outputs, node: self._record_and_run(
-                call_order, "reader_task", self.reader.run, outputs["search_task"]
+                call_order,
+                "reader_task",
+                self.reader.run,
+                AgentContext(
+                    task_id="reader_task",
+                    inputs={"search_results": outputs["search_task"].output},
+                ),
             ),
             "writer_task": lambda outputs, node: self._record_and_run(
                 call_order,
                 "writer_task",
                 self.writer.run,
-                self.question,
-                outputs["planner_task"],
-                outputs["reader_task"],
+                AgentContext(
+                    task_id="writer_task",
+                    inputs={
+                        "question": self.question,
+                        "plan": outputs["planner_task"].output,
+                        "findings": outputs["reader_task"].output,
+                    },
+                ),
+            ),
+            "critic_task": lambda outputs, node: self._record_and_run(
+                call_order,
+                "critic_task",
+                self.critic.run,
+                AgentContext(
+                    task_id="critic_task",
+                    inputs={
+                        "report": outputs["writer_task"].output,
+                        "findings": outputs["reader_task"].output,
+                    },
+                ),
             ),
         }
 
@@ -106,14 +141,14 @@ class TestDAGExecutor(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual(
             call_order,
-            ["planner_task", "search_task", "reader_task", "writer_task"],
+            ["planner_task", "search_task", "reader_task", "writer_task", "critic_task"],
         )
 
     def test_execution_result_contains_research_report(self) -> None:
         result = self._run_success_pipeline()
 
         self.assertIn("writer_task", result.outputs)
-        self.assertIsInstance(result.outputs["writer_task"], ResearchReport)
+        self.assertIsInstance(result.outputs["writer_task"].output, ResearchReport)
 
     def test_success_execution_sets_all_states_to_success(self) -> None:
         result = self._run_success_pipeline()
@@ -171,13 +206,39 @@ class TestDAGExecutor(unittest.TestCase):
     def _run_success_pipeline(self):
         graph = build_minimal_research_graph()
         handlers = {
-            "planner_task": lambda outputs, node: self.planner.run(self.question),
-            "search_task": lambda outputs, node: self.searcher.run(outputs["planner_task"]),
-            "reader_task": lambda outputs, node: self.reader.run(outputs["search_task"]),
+            "planner_task": lambda outputs, node: self.planner.run(
+                AgentContext(task_id="planner_task", inputs={"question": self.question})
+            ),
+            "search_task": lambda outputs, node: self.searcher.run(
+                AgentContext(
+                    task_id="search_task",
+                    inputs={"plan": outputs["planner_task"].output},
+                )
+            ),
+            "reader_task": lambda outputs, node: self.reader.run(
+                AgentContext(
+                    task_id="reader_task",
+                    inputs={"search_results": outputs["search_task"].output},
+                )
+            ),
             "writer_task": lambda outputs, node: self.writer.run(
-                self.question,
-                outputs["planner_task"],
-                outputs["reader_task"],
+                AgentContext(
+                    task_id="writer_task",
+                    inputs={
+                        "question": self.question,
+                        "plan": outputs["planner_task"].output,
+                        "findings": outputs["reader_task"].output,
+                    },
+                )
+            ),
+            "critic_task": lambda outputs, node: self.critic.run(
+                AgentContext(
+                    task_id="critic_task",
+                    inputs={
+                        "report": outputs["writer_task"].output,
+                        "findings": outputs["reader_task"].output,
+                    },
+                )
             ),
         }
         return DAGExecutor(graph=graph, handlers=handlers).execute()
