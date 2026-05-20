@@ -1,29 +1,47 @@
-# Target Architecture
+# Architecture
 
-DeepResearchAgent is intended to evolve into a multi-agent research system with the following high-level flow:
+DeepResearchAgent is a multi-agent research workflow prototype. The current implemented flow is:
 
 ```text
-Research Question
+ResearchQuestion
   -> PlannerAgent
-  -> DAG Orchestrator
-  -> SearcherAgent / ReaderAgent
-  -> Shared Memory
+  -> DAGExecutor
+  -> SearcherAgent
+  -> ReaderAgent
   -> WriterAgent
   -> CriticAgent
+  -> RedAgent
+  -> BlueAgent
   -> Final Report
+  -> Evaluation
 ```
 
-## Component Intent
+## Component Responsibilities
 
-- `Research Question`: the user-provided research task
+- `ResearchQuestion`: the user-provided research task
 - `PlannerAgent`: decomposes the task into actionable steps
-- `DAG Orchestrator`: schedules research tasks with explicit dependencies
-- `SearcherAgent / ReaderAgent`: gather and interpret source material
-- `Shared Memory`: stores plans, findings, evidence, and revisions
+- `DAGExecutor`: runs task nodes in dependency order
+- `SearcherAgent`: returns deterministic mock search results
+- `ReaderAgent`: converts mock snippets into findings
 - `WriterAgent`: synthesizes findings into a coherent report
-- `CriticAgent`: reviews report quality, logic, and evidence support
-- `Final Report`: the final user-facing research output
+- `CriticAgent`: performs deterministic structural checks
+- `RedAgent`: raises rule-based review issues
+- `BlueAgent`: applies rule-based revisions
+- `SharedMemory`: stores intermediate artifacts
+- `Evaluation`: runs local JSONL cases and deterministic metrics
 
-## Phase 0 Limitation
+## Implemented DAG
 
-Phase 0 does not implement the full architecture above. It only creates documentation, package structure, and minimal placeholder code so later phases can be developed on a clean foundation.
+```text
+planner_task
+  -> search_task
+  -> reader_task
+  -> writer_task
+  -> critic_task
+  -> red_review_task
+  -> blue_revision_task
+```
+
+## Current Boundaries
+
+The current system uses mock search results and deterministic local logic. It does not implement real LLM calls, real web search, vector memory, concurrent DAG execution, LLM-as-Judge, or external benchmark downloads.

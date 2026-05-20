@@ -1,0 +1,71 @@
+# Project Summary
+
+## One-Sentence Summary
+
+DeepResearchAgent is a deterministic local multi-agent research workflow prototype with DAG orchestration, shared memory, rule-based review/revision, and local evaluation.
+
+## Tech Stack
+
+- Python standard library
+- `dataclasses`
+- `unittest`
+- JSONL evaluation cases
+- no external runtime dependencies in the current phase
+
+## Core Modules
+
+- `core/schema.py`: data contracts for questions, plans, findings, reports, and review results
+- `agents/`: planner, searcher, reader, writer, critic, red, and blue agents
+- `orchestrator/`: DAG nodes, graph validation, sequential executor, trace recording, and pipeline runner
+- `memory/`: in-memory shared memory store and simple finding truncation helper
+- `evaluation/`: JSONL cases, rule metrics, and eval runner
+- `tests/`: coverage for schema, agents, DAG, memory, Red/Blue review, and evaluation
+
+## Execution Flow
+
+```text
+ResearchQuestion
+-> PlannerAgent
+-> DAGExecutor
+-> SearcherAgent
+-> ReaderAgent
+-> WriterAgent
+-> CriticAgent
+-> RedAgent
+-> BlueAgent
+-> Final Report
+-> Evaluation
+```
+
+## Core Highlights
+
+- multi-agent role separation through `AgentContext` and `AgentResult`
+- DAG task graph with dependency validation and sequential topological execution
+- SharedMemory for intermediate artifacts
+- rule-based CriticAgent checks
+- single-round RedAgent / BlueAgent review and revision
+- ResearchBench-mini local evaluation with deterministic rule metrics
+- mock search pipeline that keeps runs reproducible and dependency-free
+
+## Current Boundaries
+
+- no real LLM calls
+- no real web search
+- no async or concurrent DAG execution
+- no vector database or embeddings
+- no long-term memory
+- no LLM-as-Judge
+- no complex benchmark framework
+
+## Future Extensions
+
+- real search API integration behind `SearcherAgent`
+- LLM-backed planning, reading, writing, and critique behind existing agent interfaces
+- source parsing and citation grounding
+- persistent memory store
+- richer evaluation datasets and human review
+- concurrency after DAG correctness is stable
+
+## Resume-Friendly Description
+
+Built DeepResearchAgent, a Python multi-agent research workflow prototype with role-specific agents, DAG task orchestration, shared in-memory state, rule-based Red/Blue review, and ResearchBench-mini style local evaluation. Implemented a deterministic mock search pipeline with unit-tested schemas, agent handoffs, memory writes, traceable execution, and reproducible evaluation metrics.

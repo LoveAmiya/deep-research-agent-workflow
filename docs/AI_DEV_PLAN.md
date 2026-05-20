@@ -8,6 +8,7 @@ This document defines the staged implementation plan for DeepResearchAgent.
 - Add architecture and phase documentation
 - Add minimal schemas and placeholder agent base class
 - Add example data and baseline tests
+- Status: completed
 
 ## Phase 1: Minimal Deep Research Pipeline
 
@@ -15,39 +16,50 @@ This document defines the staged implementation plan for DeepResearchAgent.
 - Support a research question input and a simple plan object
 - Add placeholder search and reading steps without real external integration
 - Generate a minimal report from deterministic local logic
+- Status: completed
 
 ## Phase 2: DAG Orchestrator
 
 - Introduce DAG-based task modeling
 - Add dependency-aware orchestration
 - Define node execution contracts and execution tracing
+- Status: completed with sequential topological execution
 
 ## Phase 3: Multi-Agent Role Split
 
 - Separate planner, searcher, reader, writer, and critic roles
 - Define agent interfaces and handoff boundaries
 - Support role-specific prompts and execution hooks
+- Status: completed with `AgentContext`, `AgentResult`, and `CriticAgent`
 
 ## Phase 4: Shared Memory
 
 - Add a shared memory abstraction
 - Store intermediate findings, references, and report state
 - Support agent read and write access through controlled APIs
+- Status: completed with in-memory storage and simple deduplication
 
 ## Phase 5: Red-Blue Review
 
 - Add adversarial review between generation and critique roles
 - Track disagreements, revisions, and review outcomes
 - Improve factual consistency and report quality
+- Status: completed as a deterministic single-round rule-based review/revision pass
 
 ## Phase 6: Evaluation
 
 - Add evaluation datasets, metrics, and reproducible runs
 - Compare intermediate and final outputs
 - Measure coverage, citation quality, and answer usefulness
+- Status: completed with local ResearchBench-mini JSONL cases and rule metrics
 
 ## Phase 7: Documentation and Interview Materials
 
 - Finalize developer documentation
 - Add onboarding and extension guides
 - Prepare architecture explanation and interview-oriented materials
+- Status: completed as documentation-only finalization
+
+## Current Implementation Boundary
+
+The project remains a deterministic local prototype. It does not perform real LLM calls, real online search, concurrent DAG execution, vector retrieval, LLM-as-Judge, or complex benchmark evaluation.
