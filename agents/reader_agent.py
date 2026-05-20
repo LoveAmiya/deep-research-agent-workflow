@@ -2,6 +2,7 @@ from typing import List
 
 from agents.base_agent import AgentContext, AgentResult, BaseAgent
 from core.schema import Finding, SearchResult
+from memory.compression import compress_findings
 
 
 class ReaderAgent(BaseAgent):
@@ -29,16 +30,19 @@ class ReaderAgent(BaseAgent):
                     finding_id=f"finding-{index}",
                 )
             )
+        findings = compress_findings(findings)
+        metadata = {
+            "role": self.role,
+            "handoff": "search_results -> findings",
+            "task_id": context.task_id,
+            "finding_count": len(findings),
+        }
+        self._write_memory(context, findings, metadata)
         return AgentResult(
             agent_name=self.name,
             success=True,
             output=findings,
-            metadata={
-                "role": self.role,
-                "handoff": "search_results -> findings",
-                "task_id": context.task_id,
-                "finding_count": len(findings),
-            },
+            metadata=metadata,
         )
 
     @staticmethod
@@ -52,3 +56,17 @@ class ReaderAgent(BaseAgent):
             if remainder:
                 return remainder[:1].upper() + remainder[1:]
         return normalized
+
+    def _write_memory(self, context: AgentContext, findings: List[Finding], metadata: dict) -> None:
+        if context.memory is None:
+            return
+        try:
+            context.memory.add_record(
+                item_type="findings",
+                content=findings,
+                source_agent=self.name,
+                task_id=context.task_id,
+                metadata=metadata,
+            )
+        except Exception as exc:
+            metadata["memory_error"] = str(exc)

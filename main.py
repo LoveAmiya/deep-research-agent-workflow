@@ -5,6 +5,7 @@ from agents.reader_agent import ReaderAgent
 from agents.searcher_agent import SearcherAgent
 from agents.writer_agent import WriterAgent
 from core.schema import ResearchQuestion
+from memory.store import SharedMemory
 from orchestrator.executor import DAGExecutor, ExecutionResult
 from orchestrator.research_pipeline import build_minimal_research_graph
 
@@ -18,6 +19,7 @@ def build_demo_execution() -> ExecutionResult:
     reader = ReaderAgent()
     writer = WriterAgent()
     critic = CriticAgent()
+    memory = SharedMemory()
 
     graph = build_minimal_research_graph()
     handlers = {
@@ -26,6 +28,7 @@ def build_demo_execution() -> ExecutionResult:
                 task_id=node.task_id,
                 inputs={"question": question},
                 metadata={"agent_name": planner.name},
+                memory=memory,
             )
         ),
         "search_task": lambda outputs, node: searcher.run(
@@ -33,6 +36,7 @@ def build_demo_execution() -> ExecutionResult:
                 task_id=node.task_id,
                 inputs={"plan": outputs["planner_task"].output},
                 metadata={"agent_name": searcher.name},
+                memory=memory,
             )
         ),
         "reader_task": lambda outputs, node: reader.run(
@@ -40,6 +44,7 @@ def build_demo_execution() -> ExecutionResult:
                 task_id=node.task_id,
                 inputs={"search_results": outputs["search_task"].output},
                 metadata={"agent_name": reader.name},
+                memory=memory,
             )
         ),
         "writer_task": lambda outputs, node: writer.run(
@@ -51,6 +56,7 @@ def build_demo_execution() -> ExecutionResult:
                     "findings": outputs["reader_task"].output,
                 },
                 metadata={"agent_name": writer.name},
+                memory=memory,
             )
         ),
         "critic_task": lambda outputs, node: critic.run(
@@ -61,11 +67,14 @@ def build_demo_execution() -> ExecutionResult:
                     "findings": outputs["reader_task"].output,
                 },
                 metadata={"agent_name": critic.name},
+                memory=memory,
             )
         ),
     }
     executor = DAGExecutor(graph=graph, handlers=handlers)
-    return executor.execute()
+    result = executor.execute()
+    result.outputs["shared_memory"] = memory
+    return result
 
 
 def build_demo_report() -> str:
@@ -85,6 +94,7 @@ def main() -> None:
     execution = build_demo_execution()
     report_result = execution.outputs["writer_task"]
     critic_result = execution.outputs["critic_task"]
+    memory = execution.outputs["shared_memory"]
     report = report_result.output
     review = critic_result.output
 
@@ -92,6 +102,10 @@ def main() -> None:
     print()
     print(f"Review passed: {review['passed']}")
     print(f"Issues: {review['issues']}")
+    print()
+    print("Shared memory items:")
+    for item_type in ["plan", "search_results", "findings", "report", "review"]:
+        print(f"- {item_type}: {len(memory.list_by_type(item_type))}")
 
 
 if __name__ == "__main__":

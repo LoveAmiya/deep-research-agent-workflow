@@ -47,13 +47,29 @@ class CriticAgent(BaseAgent):
             "checks": checks,
             "finding_count": len(findings),
         }
+        metadata = {
+            "role": self.role,
+            "handoff": "report -> review",
+            "task_id": context.task_id,
+        }
+        self._write_memory(context, review, metadata)
         return AgentResult(
             agent_name=self.name,
             success=True,
             output=review,
-            metadata={
-                "role": self.role,
-                "handoff": "report -> review",
-                "task_id": context.task_id,
-            },
+            metadata=metadata,
         )
+
+    def _write_memory(self, context: AgentContext, review: dict, metadata: dict) -> None:
+        if context.memory is None:
+            return
+        try:
+            context.memory.add_record(
+                item_type="review",
+                content=review,
+                source_agent=self.name,
+                task_id=context.task_id,
+                metadata=metadata,
+            )
+        except Exception as exc:
+            metadata["memory_error"] = str(exc)

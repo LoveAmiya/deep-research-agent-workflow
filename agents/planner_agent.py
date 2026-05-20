@@ -28,19 +28,36 @@ class PlannerAgent(BaseAgent):
             f"{base_question} enterprise adoption challenges",
         ]
         expected_sections = ["Background", "Key Findings", "Conclusion"]
+        plan = ResearchPlan(
+            question=base_question,
+            sub_questions=sub_questions,
+            search_queries=search_queries,
+            expected_sections=expected_sections,
+            question_id=question.question_id,
+        )
+        metadata = {
+            "role": self.role,
+            "handoff": "question -> plan",
+            "task_id": context.task_id,
+        }
+        self._write_memory(context, plan, metadata)
         return AgentResult(
             agent_name=self.name,
             success=True,
-            output=ResearchPlan(
-                question=base_question,
-                sub_questions=sub_questions,
-                search_queries=search_queries,
-                expected_sections=expected_sections,
-                question_id=question.question_id,
-            ),
-            metadata={
-                "role": self.role,
-                "handoff": "question -> plan",
-                "task_id": context.task_id,
-            },
+            output=plan,
+            metadata=metadata,
         )
+
+    def _write_memory(self, context: AgentContext, plan: ResearchPlan, metadata: dict) -> None:
+        if context.memory is None:
+            return
+        try:
+            context.memory.add_record(
+                item_type="plan",
+                content=plan,
+                source_agent=self.name,
+                task_id=context.task_id,
+                metadata=metadata,
+            )
+        except Exception as exc:
+            metadata["memory_error"] = str(exc)

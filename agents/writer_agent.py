@@ -52,26 +52,29 @@ class WriterAgent(BaseAgent):
             {"title": "Conclusion", "content": conclusion},
         ]
         markdown = self._build_markdown(question, sections, references)
+        report = ResearchReport(
+            title=f"Research Report: {question.question}",
+            question=question.question,
+            sections=sections,
+            citations=references,
+            markdown=markdown,
+            question_id=question.question_id,
+            findings=findings,
+            references=references,
+            summary=plan.objective,
+        )
+        metadata = {
+            "role": self.role,
+            "handoff": "findings -> report",
+            "task_id": context.task_id,
+            "citation_count": len(references),
+        }
+        self._write_memory(context, report, metadata)
         return AgentResult(
             agent_name=self.name,
             success=True,
-            output=ResearchReport(
-                title=f"Research Report: {question.question}",
-                question=question.question,
-                sections=sections,
-                citations=references,
-                markdown=markdown,
-                question_id=question.question_id,
-                findings=findings,
-                references=references,
-                summary=plan.objective,
-            ),
-            metadata={
-                "role": self.role,
-                "handoff": "findings -> report",
-                "task_id": context.task_id,
-                "citation_count": len(references),
-            },
+            output=report,
+            metadata=metadata,
         )
 
     @staticmethod
@@ -94,3 +97,17 @@ class WriterAgent(BaseAgent):
         lines.extend(["## References", ""])
         lines.extend([f"- {reference}" for reference in references])
         return "\n".join(lines).strip()
+
+    def _write_memory(self, context: AgentContext, report: ResearchReport, metadata: dict) -> None:
+        if context.memory is None:
+            return
+        try:
+            context.memory.add_record(
+                item_type="report",
+                content=report,
+                source_agent=self.name,
+                task_id=context.task_id,
+                metadata=metadata,
+            )
+        except Exception as exc:
+            metadata["memory_error"] = str(exc)

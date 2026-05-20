@@ -32,14 +32,30 @@ class SearcherAgent(BaseAgent):
                     source="mock",
                 )
             )
+        metadata = {
+            "role": self.role,
+            "handoff": "plan -> search_results",
+            "task_id": context.task_id,
+            "result_count": len(results),
+        }
+        self._write_memory(context, results, metadata)
         return AgentResult(
             agent_name=self.name,
             success=True,
             output=results,
-            metadata={
-                "role": self.role,
-                "handoff": "plan -> search_results",
-                "task_id": context.task_id,
-                "result_count": len(results),
-            },
+            metadata=metadata,
         )
+
+    def _write_memory(self, context: AgentContext, results: List[SearchResult], metadata: dict) -> None:
+        if context.memory is None:
+            return
+        try:
+            context.memory.add_record(
+                item_type="search_results",
+                content=results,
+                source_agent=self.name,
+                task_id=context.task_id,
+                metadata=metadata,
+            )
+        except Exception as exc:
+            metadata["memory_error"] = str(exc)

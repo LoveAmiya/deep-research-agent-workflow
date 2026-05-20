@@ -1,5 +1,8 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
+if TYPE_CHECKING:
+    from memory.store import SharedMemory
 
 
 @dataclass
@@ -7,6 +10,7 @@ class AgentContext:
     task_id: str
     inputs: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    memory: Optional["SharedMemory"] = None
 
 
 @dataclass
