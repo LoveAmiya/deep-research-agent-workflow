@@ -14,6 +14,7 @@ class AgentContext:
     memory: Optional["SharedMemory"] = None
     llm_client: Optional["BaseLLMClient"] = None
     search_provider_registry: Optional[Any] = None
+    web_fetcher: Optional[Any] = None
 
 
 @dataclass

@@ -82,6 +82,7 @@ def run_research_pipeline(
     search_provider_order=None,
     real_search_enabled: bool = False,
     fetch_tool=None,
+    web_fetcher=None,
     citation_registry=None,
     use_red_blue_loop: bool = False,
     red_blue_loop_config: RedBlueLoopConfig | None = None,
@@ -94,6 +95,7 @@ def run_research_pipeline(
         search_provider_order=search_provider_order,
         real_search_enabled=real_search_enabled,
         fetch_tool=fetch_tool,
+        web_fetcher=web_fetcher,
         citation_registry=citation_registry,
     )
     graph = components["graph"]
@@ -120,6 +122,7 @@ def build_research_pipeline_components(
     search_provider_order=None,
     real_search_enabled: bool = False,
     fetch_tool=None,
+    web_fetcher=None,
     citation_registry=None,
 ) -> dict:
     question = ResearchQuestion(question=question_text)
@@ -167,11 +170,13 @@ def build_research_pipeline_components(
                 inputs={
                     "search_results": outputs["search_task"].output,
                     "fetch_tool": fetch_tool,
+                    "web_fetcher": web_fetcher,
                     "citation_registry": citation_registry,
                 },
                 metadata={"agent_name": reader.name},
                 memory=memory,
                 llm_client=llm_client,
+                web_fetcher=web_fetcher,
             )
         ),
         "writer_task": lambda outputs, node: writer.run(

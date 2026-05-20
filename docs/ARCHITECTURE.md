@@ -9,6 +9,7 @@ ResearchQuestion
   -> SearcherAgent
   -> SearchProviderRegistry
   -> ReaderAgent
+  -> WebFetcher
   -> CitationRegistry
   -> WriterAgent
   -> CriticAgent
@@ -26,7 +27,8 @@ ResearchQuestion
 - `AsyncDAGExecutor`: optional asyncio executor for dependency-ready concurrent task scheduling
 - `SearcherAgent`: returns deterministic mock search results by default, or provider/tool-backed web search results when configured
 - `SearchProviderRegistry`: coordinates ordered search providers, fallback, and provider trace metadata
-- `ReaderAgent`: converts snippets into findings by default, or optional fetched page text into findings
+- `ReaderAgent`: converts snippets into findings by default, or web-fetched/extracted page text into findings
+- `WebFetcher`: fetches URLs into title, text, content type, status, error, and trace metadata
 - `CitationRegistry`: stores `EvidenceSpan` and `Citation` records for the current run
 - `WriterAgent`: synthesizes findings into a coherent report with `[C#]` citation markers, with optional LLM assistance
 - `CriticAgent`: performs deterministic structural and citation grounding checks, with optional LLM notes
@@ -34,7 +36,7 @@ ResearchQuestion
 - `BlueAgent`: applies rule-based revisions including citation marker/reference repair, with optional LLM notes
 - `RedBlueLoopRunner`: optional bounded multi-round rule-based Red/Blue review loop
 - `SharedMemory`: stores intermediate artifacts
-- `SearchProvider` / `SearchTool` / `FetchTool`: optional integration points for web search and simple page retrieval
+- `SearchProvider` / `SearchTool` / `WebFetcher` / `FetchTool`: optional integration points for web search and page retrieval
 - `CitationValidator`: rule-checks report citation IDs, markers, and References URLs
 - `Evaluation`: runs local JSONL cases and deterministic metrics
 
@@ -52,4 +54,4 @@ planner_task
 
 ## Current Boundaries
 
-The current system uses mock search/fetch and deterministic local logic by default. Optional LLM calls, optional provider-based web search/fetch, optional local asyncio DAG execution, and optional bounded iterative Red/Blue review are available when configured. Citation grounding is local and rule-based; the system does not implement production-grade webpage parsing, semantic evidence verification, vector memory, distributed execution, checkpoint/resume, complex scoring, or external benchmark downloads.
+The current system uses mock search/fetch and deterministic local logic by default. Optional LLM calls, optional provider-based web search and HTTP fetch, optional local asyncio DAG execution, and optional bounded iterative Red/Blue review are available when configured. Citation grounding is local and rule-based; the system does not implement JavaScript-rendered page extraction, production-grade webpage parsing, semantic evidence verification, vector memory, distributed execution, checkpoint/resume, context compression, complex scoring, or external benchmark downloads.

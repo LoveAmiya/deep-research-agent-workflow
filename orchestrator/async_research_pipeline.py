@@ -13,6 +13,7 @@ async def async_run_research_pipeline(
     search_provider_order=None,
     real_search_enabled: bool = False,
     fetch_tool=None,
+    web_fetcher=None,
     citation_registry=None,
     max_concurrency: int = 3,
     task_timeout_seconds=None,
@@ -27,6 +28,7 @@ async def async_run_research_pipeline(
         search_provider_order=search_provider_order,
         real_search_enabled=real_search_enabled,
         fetch_tool=fetch_tool,
+        web_fetcher=web_fetcher,
         citation_registry=citation_registry,
     )
     execution = await AsyncDAGExecutor(

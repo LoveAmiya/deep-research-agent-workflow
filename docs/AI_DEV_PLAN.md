@@ -138,8 +138,18 @@ This document defines the staged implementation plan for DeepResearchAgent.
 - Wrap Phase 10 DuckDuckGo HTML search behind a provider interface
 - Add optional Brave, SerpAPI, and Tavily provider skeletons that fail safely without keys
 - Let `SearcherAgent` use provider registry when available while preserving old fallback paths
+- Status: completed
+
+## Phase 17: Robust Web Fetch and Content Extraction
+
+- Add normalized `WebFetchResult`
+- Add `BaseWebFetcher`, `MockWebFetcher`, and `HTTPWebFetcher`
+- Add lightweight HTML title and main text extraction
+- Track timeout, retry, content type, truncation, and error metadata
+- Let `ReaderAgent` use web fetchers before falling back to snippets
+- Keep tests deterministic without real network access
 - Status: current phase
 
 ## Current Implementation Boundary
 
-The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM, optional provider-based web search/fetch, optional local asyncio DAG execution, optional bounded iterative Red/Blue review, optional SQLite run persistence, and optional LLM-as-Judge mini evaluation when configured. Citation grounding is rule-based through local evidence/citation IDs; the project does not perform production-grade webpage extraction, semantic fact verification, distributed execution, checkpoint/resume, vector retrieval, embeddings, multi-judge voting, statistical significance testing, or complex benchmark evaluation.
+The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM, optional provider-based web search and HTTP fetch, optional local asyncio DAG execution, optional bounded iterative Red/Blue review, optional SQLite run persistence, and optional LLM-as-Judge mini evaluation when configured. Citation grounding is rule-based through local evidence/citation IDs; the project does not perform JavaScript-rendered page extraction, production-grade semantic extraction, semantic fact verification, distributed execution, checkpoint/resume, vector retrieval, embeddings, context compression, multi-judge voting, statistical significance testing, or complex benchmark evaluation.

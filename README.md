@@ -6,7 +6,7 @@ The current implementation is a deterministic local prototype by default. Search
 
 ## Current Status
 
-The repository is currently at Phase 16: Reliable Web Search Providers.
+The repository is currently at Phase 17: Robust Web Fetch and Content Extraction.
 
 Implemented capabilities:
 
@@ -23,13 +23,14 @@ Implemented capabilities:
 - optional OpenAI-compatible LLM client with deterministic fallback
 - optional standard-library web search and webpage fetch with mock fallback
 - provider-based search registry with deterministic mock fallback
+- robust web fetcher abstraction with lightweight HTML title/main text extraction
 - lightweight evidence spans, citation IDs, citation markers, and citation validation
 - optional asyncio DAG executor with max concurrency, timeout, and async traces
 - optional iterative rule-based Red/Blue review loop with bounded convergence checks
 - optional SQLite run-level persistence for debugging and replay
 - optional LLM-as-Judge mini evaluation with deterministic mock/fallback support
 
-This phase does not include complex webpage extraction, semantic evidence verification, distributed execution, checkpoint/resume, vector memory, multi-judge voting, Bootstrap CI, Cohen's d, or external benchmark downloads.
+This phase does not include JavaScript-rendered page extraction, semantic evidence verification, distributed execution, checkpoint/resume, vector memory, context compression, multi-judge voting, Bootstrap CI, Cohen's d, or external benchmark downloads.
 
 ## Directory Structure
 
@@ -82,7 +83,7 @@ If configuration is incomplete or an agent cannot use the LLM output safely, the
 
 ## Optional Web Search Mode
 
-By default the project uses `MockSearchTool` and `MockFetchTool`. To try standard-library DuckDuckGo HTML search and simple page fetching, set:
+By default the project uses deterministic mock search and mock web fetching. To try standard-library DuckDuckGo HTML search and HTTP fetching, set:
 
 ```bash
 set DEEP_RESEARCH_USE_WEB_SEARCH=1
@@ -101,6 +102,8 @@ set DEEP_RESEARCH_SEARCH_PROVIDER_ORDER=duckduckgo_html,mock
 ```
 
 Optional API-provider keys can be configured with `DEEP_RESEARCH_BRAVE_API_KEY`, `DEEP_RESEARCH_SERPAPI_API_KEY`, or `DEEP_RESEARCH_TAVILY_API_KEY`, but their Phase 16 implementations are safe interface skeletons, not production integrations.
+
+Phase 17 adds `MockWebFetcher` and `HTTPWebFetcher`. `HTTPWebFetcher` records timeout/retry/content-type/error metadata and extracts lightweight HTML title/main text. It does not render JavaScript pages and does not guarantee production-grade content extraction.
 
 ## Optional Async DAG Mode
 
@@ -170,6 +173,7 @@ This is not multi-model judging, human annotation, or full ResearchBench.
 
 - real web search and webpage fetch are optional and lightweight, not production-grade
 - provider-based search has fallback and trace metadata, but not production-grade ranking
+- robust fetch handles HTML/plain text and failure metadata, but not JavaScript rendering
 - citation grounding is rule-based and not semantic fact verification
 - async DAG execution is local asyncio scheduling, not distributed execution
 - no vector memory or embeddings
@@ -197,5 +201,6 @@ This is not multi-model judging, human annotation, or full ResearchBench.
 - Phase 14: Optional SQLite persistent run store
 - Phase 15: Optional LLM-as-Judge mini evaluation
 - Phase 16: Reliable search provider registry and fallback
+- Phase 17: Robust web fetch and lightweight content extraction
 
-Future work can add robust webpage extraction, semantic evidence verification, better source parsing, persistent memory, richer LLM-backed agents, and stronger evaluation.
+Future work can add JavaScript-rendered page support, semantic evidence verification, better source parsing, persistent memory, richer LLM-backed agents, and stronger evaluation.

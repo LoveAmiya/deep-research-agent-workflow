@@ -14,6 +14,7 @@ from orchestrator.async_research_pipeline import async_run_research_pipeline
 from orchestrator.research_pipeline import run_research_pipeline
 from search.providers import MockSearchProvider
 from search.registry import create_search_provider_registry
+from search.fetchers import MockWebFetcher, create_web_fetcher
 from tools.fetch_tool import MockFetchTool, create_fetch_tool
 from tools.search_tool import MockSearchTool, create_search_tool
 
@@ -36,6 +37,7 @@ def build_demo_execution(load_dotenv: bool = False) -> dict:
     search_tool = create_search_tool(search_config)
     search_provider_registry = create_search_provider_registry(search_config)
     fetch_tool = create_fetch_tool(search_config)
+    web_fetcher = create_web_fetcher(search_config)
     if dag_config.use_async:
         result = asyncio.run(
             async_run_research_pipeline(
@@ -46,6 +48,7 @@ def build_demo_execution(load_dotenv: bool = False) -> dict:
                 search_provider_order=search_config.provider_order,
                 real_search_enabled=search_config.real_search_enabled,
                 fetch_tool=fetch_tool,
+                web_fetcher=web_fetcher,
                 max_concurrency=dag_config.max_concurrency,
                 task_timeout_seconds=dag_config.task_timeout_seconds,
                 use_red_blue_loop=red_blue_loop_execution_config.enabled,
@@ -61,6 +64,7 @@ def build_demo_execution(load_dotenv: bool = False) -> dict:
             search_provider_order=search_config.provider_order,
             real_search_enabled=search_config.real_search_enabled,
             fetch_tool=fetch_tool,
+            web_fetcher=web_fetcher,
             use_red_blue_loop=red_blue_loop_execution_config.enabled,
             red_blue_loop_config=red_blue_loop_config,
         )
@@ -70,6 +74,7 @@ def build_demo_execution(load_dotenv: bool = False) -> dict:
     result["search_tool"] = search_tool
     result["search_provider_registry"] = search_provider_registry
     result["fetch_tool"] = fetch_tool
+    result["web_fetcher"] = web_fetcher
     result["dag_config"] = dag_config
     result["red_blue_loop_execution_config"] = red_blue_loop_execution_config
     result["run_store_config"] = run_store_config
@@ -100,6 +105,7 @@ def main() -> None:
     search_tool = execution["search_tool"]
     search_provider_registry = execution["search_provider_registry"]
     fetch_tool = execution["fetch_tool"]
+    web_fetcher = execution["web_fetcher"]
     dag_config = execution["dag_config"]
     red_blue_loop_execution_config = execution["red_blue_loop_execution_config"]
     run_store_config = execution["run_store_config"]
@@ -123,6 +129,9 @@ def main() -> None:
     if isinstance(search_provider_registry.get(search_metadata.get("search_provider", "mock")), MockSearchProvider):
         print("Search provider mode: mock")
     print(f"Fetch mode: {'mock' if isinstance(fetch_tool, MockFetchTool) else fetch_tool.provider}")
+    print(f"Web fetcher: {reader_metadata.get('fetcher_name')}")
+    if isinstance(web_fetcher, MockWebFetcher):
+        print("Web fetcher mode: mock")
     if search_metadata.get("fallback_used") or reader_metadata.get("fallback_used"):
         print(
             "Fallback summary: "
