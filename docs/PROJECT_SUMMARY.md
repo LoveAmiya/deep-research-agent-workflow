@@ -2,7 +2,7 @@
 
 ## One-Sentence Summary
 
-DeepResearchAgent is a deterministic-by-default multi-agent research workflow prototype with optional LLM assistance, optional web search/fetch, citation grounding, sync/async DAG orchestration, shared memory, bounded rule-based Red/Blue review/revision, SQLite run persistence, and local evaluation.
+DeepResearchAgent is a deterministic-by-default multi-agent research workflow prototype with optional LLM assistance, optional web search/fetch, citation grounding, sync/async DAG orchestration, shared memory, bounded rule-based Red/Blue review/revision, SQLite run persistence, optional LLM-as-Judge mini-evaluation, and local rule evaluation.
 
 ## Tech Stack
 
@@ -25,6 +25,7 @@ DeepResearchAgent is a deterministic-by-default multi-agent research workflow pr
 - `tools/`: mock and optional web search/fetch tools
 - `tools/citation_tool.py`: in-memory evidence/citation registry and validator
 - `evaluation/`: JSONL cases, rule metrics, and eval runner
+- `evaluation/llm_judge.py`: optional LLM-as-Judge mini evaluator
 - `tests/`: coverage for schema, agents, DAG, memory, Red/Blue review, and evaluation
 
 ## Execution Flow
@@ -58,6 +59,7 @@ ResearchQuestion
 - optional SearchTool and FetchTool integration with deterministic fallback
 - evidence spans, citation IDs, `[C#]` report markers, and rule-based citation validation
 - optional SQLite run store for saving, loading, listing, and summarizing completed runs
+- optional LLM-as-Judge mini-evaluation across relevance, consistency, citations, completeness, and clarity
 
 ## Current Boundaries
 
@@ -67,7 +69,7 @@ ResearchQuestion
 - no vector database or embeddings
 - no long-term memory
 - no checkpoint/resume
-- no LLM-as-Judge
+- LLM-as-Judge is optional and does not include multi-judge voting or external fact verification
 - no complex scoring or adversarial training
 - no complex benchmark framework
 

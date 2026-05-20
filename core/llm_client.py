@@ -32,6 +32,28 @@ class BaseLLMClient:
 
 class MockLLMClient(BaseLLMClient):
     def generate(self, messages: List[LLMMessage], temperature: float = 0.2) -> LLMResponse:
+        if any("evaluation judge" in message.content.lower() for message in messages):
+            return LLMResponse(
+                content=json.dumps(
+                    {
+                        "dimension_scores": {
+                            "answer_relevance": 4,
+                            "factual_consistency": 4,
+                            "citation_quality": 4,
+                            "completeness": 4,
+                            "clarity": 4,
+                        },
+                        "overall_score": 4.0,
+                        "strengths": ["Clear structure and grounded citations."],
+                        "weaknesses": ["Mock judge cannot verify external facts."],
+                        "suggested_improvements": ["Use real evidence review for production evaluation."],
+                        "passed": True,
+                    }
+                ),
+                model="mock-llm",
+                usage={"prompt_messages": len(messages), "temperature": temperature},
+                raw={"provider": "mock", "mode": "judge"},
+            )
         last_user_message = ""
         for message in reversed(messages):
             if message.role == "user":

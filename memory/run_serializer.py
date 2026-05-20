@@ -35,6 +35,7 @@ def build_run_summary(result: dict, question: str) -> Dict[str, Any]:
     red_review = result.get("red_review")
     blue_revision = result.get("blue_revision")
     loop_result = result.get("red_blue_loop_result")
+    judge_result = result.get("judge_result")
     report_markdown = getattr(report, "markdown", None) if report is not None else None
 
     summary = {
@@ -53,6 +54,8 @@ def build_run_summary(result: dict, question: str) -> Dict[str, Any]:
         if blue_revision is not None
         else 0,
         "red_blue_loop_rounds": len(getattr(loop_result, "rounds", [])) if loop_result else 0,
+        "judge_overall_score": getattr(judge_result, "overall_score", None) if judge_result else None,
+        "judge_passed": getattr(judge_result, "passed", None) if judge_result else None,
         "success": bool(result.get("success", False)),
     }
     return to_jsonable(summary)

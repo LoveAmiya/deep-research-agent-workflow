@@ -6,7 +6,7 @@ The current implementation is a deterministic local prototype by default. Search
 
 ## Current Status
 
-The repository is currently at Phase 14: Persistent Run Store.
+The repository is currently at Phase 15: Optional LLM-as-Judge Mini Evaluation.
 
 Implemented capabilities:
 
@@ -26,8 +26,9 @@ Implemented capabilities:
 - optional asyncio DAG executor with max concurrency, timeout, and async traces
 - optional iterative rule-based Red/Blue review loop with bounded convergence checks
 - optional SQLite run-level persistence for debugging and replay
+- optional LLM-as-Judge mini evaluation with deterministic mock/fallback support
 
-This phase does not include semantic evidence verification, distributed execution, checkpoint/resume, vector memory, LLM-as-judge, Bootstrap CI, Cohen's d, or external benchmark downloads.
+This phase does not include semantic evidence verification, distributed execution, checkpoint/resume, vector memory, multi-judge voting, Bootstrap CI, Cohen's d, or external benchmark downloads.
 
 ## Directory Structure
 
@@ -135,13 +136,32 @@ python -m evaluation.run_eval
 
 This runs local ResearchBench-mini style JSONL cases and prints rule metric averages.
 
+## Optional LLM-as-Judge Evaluation
+
+By default LLM judge is disabled and rule metrics are unchanged. To enable judge evaluation:
+
+```powershell
+$env:DEEP_RESEARCH_USE_LLM_JUDGE="1"
+python -m evaluation.run_eval
+```
+
+To force deterministic mock judge mode:
+
+```powershell
+$env:DEEP_RESEARCH_USE_LLM_JUDGE="1"
+$env:DEEP_RESEARCH_LLM_JUDGE_USE_MOCK="1"
+python -m evaluation.run_eval
+```
+
+This is not multi-model judging, human annotation, or full ResearchBench.
+
 ## Current Limitations
 
 - real web search and webpage fetch are optional and lightweight, not production-grade
 - citation grounding is rule-based and not semantic fact verification
 - async DAG execution is local asyncio scheduling, not distributed execution
 - no vector memory or embeddings
-- no LLM-as-Judge
+- LLM-as-Judge is optional mini-evaluation, not multi-judge or external fact verification
 - no complex ResearchBench implementation
 - Red/Blue review is deterministic; iterative mode is bounded and rule-based
 - SQLite persistence is run-level storage, not semantic long-term memory
@@ -163,5 +183,6 @@ This runs local ResearchBench-mini style JSONL cases and prints rule metric aver
 - Phase 12: Optional async DAG executor
 - Phase 13: Optional iterative Red-Blue loop
 - Phase 14: Optional SQLite persistent run store
+- Phase 15: Optional LLM-as-Judge mini evaluation
 
 Future work can add semantic evidence verification, better source parsing, persistent memory, richer LLM-backed agents, and stronger evaluation.

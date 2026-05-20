@@ -79,6 +79,22 @@ def memory_completeness(memory_items: List[Dict[str, Any]]) -> float:
     return len(REQUIRED_MEMORY_TYPES.intersection(present_types)) / len(REQUIRED_MEMORY_TYPES)
 
 
+def judge_score_summary(judge_results: List[Any]) -> Dict[str, float]:
+    valid_results = [result for result in judge_results if result is not None]
+    if not valid_results:
+        return {}
+    return {
+        "average_judge_overall_score": _average_judge_attr(valid_results, "overall_score"),
+        "average_judge_answer_relevance": _average_judge_dimension(valid_results, "answer_relevance"),
+        "average_judge_factual_consistency": _average_judge_dimension(valid_results, "factual_consistency"),
+        "average_judge_citation_quality": _average_judge_dimension(valid_results, "citation_quality"),
+        "average_judge_completeness": _average_judge_dimension(valid_results, "completeness"),
+        "average_judge_clarity": _average_judge_dimension(valid_results, "clarity"),
+        "judge_pass_rate": sum(1 for result in valid_results if getattr(result, "passed", False))
+        / len(valid_results),
+    }
+
+
 def summarize_eval_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     total_cases = len(results)
     if total_cases == 0:
@@ -111,8 +127,21 @@ def summarize_eval_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
             results,
             "iterative_red_blue_score",
         )
+    judge_results = [result.get("judge_result") for result in results if result.get("judge_result") is not None]
+    summary.update(judge_score_summary(judge_results))
     return summary
 
 
 def _average(results: List[Dict[str, Any]], key: str) -> float:
     return sum(result.get("metrics", {}).get(key, 0.0) for result in results) / len(results)
+
+
+def _average_judge_attr(judge_results: List[Any], attr_name: str) -> float:
+    return sum(float(getattr(result, attr_name, 0.0) or 0.0) for result in judge_results) / len(judge_results)
+
+
+def _average_judge_dimension(judge_results: List[Any], dimension: str) -> float:
+    total = 0.0
+    for result in judge_results:
+        total += float(getattr(result, "dimension_scores", {}).get(dimension, 0.0) or 0.0)
+    return total / len(judge_results)
