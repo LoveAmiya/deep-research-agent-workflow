@@ -1,9 +1,11 @@
 import unittest
 
 from agents.base_agent import AgentContext, AgentResult
+from agents.blue_agent import BlueAgent
 from agents.critic_agent import CriticAgent
 from agents.planner_agent import PlannerAgent
 from agents.reader_agent import ReaderAgent
+from agents.red_agent import RedAgent
 from agents.searcher_agent import SearcherAgent
 from agents.writer_agent import WriterAgent
 from core.schema import ResearchQuestion, ResearchReport
@@ -22,6 +24,8 @@ class TestMultiAgentRoles(unittest.TestCase):
         self.reader = ReaderAgent()
         self.writer = WriterAgent()
         self.critic = CriticAgent()
+        self.red = RedAgent()
+        self.blue = BlueAgent()
 
     def test_planner_returns_agent_result(self) -> None:
         result = self.planner.run(
@@ -118,6 +122,8 @@ class TestMultiAgentRoles(unittest.TestCase):
 
         self.assertIn("critic_task", graph.nodes)
         self.assertEqual(graph.get_node("critic_task").depends_on, ["writer_task"])
+        self.assertIn("red_review_task", graph.nodes)
+        self.assertIn("blue_revision_task", graph.nodes)
 
     def test_full_dag_pipeline_reaches_critic_task(self) -> None:
         result = self._run_success_dag()
@@ -181,6 +187,26 @@ class TestMultiAgentRoles(unittest.TestCase):
                     task_id=node.task_id,
                     inputs={
                         "report": outputs["writer_task"].output,
+                        "findings": outputs["reader_task"].output,
+                    },
+                )
+            ),
+            "red_review_task": lambda outputs, node: self.red.run(
+                AgentContext(
+                    task_id=node.task_id,
+                    inputs={
+                        "report": outputs["writer_task"].output,
+                        "findings": outputs["reader_task"].output,
+                        "critic_review": outputs["critic_task"].output,
+                    },
+                )
+            ),
+            "blue_revision_task": lambda outputs, node: self.blue.run(
+                AgentContext(
+                    task_id=node.task_id,
+                    inputs={
+                        "report": outputs["writer_task"].output,
+                        "red_review": outputs["red_review_task"].output,
                         "findings": outputs["reader_task"].output,
                     },
                 )

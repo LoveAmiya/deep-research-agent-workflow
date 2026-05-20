@@ -76,3 +76,28 @@ class ResearchReport:
             self.references = list(self.citations)
         if not self.citations and self.references:
             self.citations = list(self.references)
+
+
+@dataclass
+class ReviewIssue:
+    issue_id: str
+    category: str
+    severity: str
+    message: str
+    evidence: Optional[str] = None
+    suggestion: Optional[str] = None
+
+
+@dataclass
+class RedReviewResult:
+    passed: bool
+    issues: List[ReviewIssue] = field(default_factory=list)
+    summary: str = ""
+
+
+@dataclass
+class BlueRevisionResult:
+    revised_report: ResearchReport
+    fixed_issue_ids: List[str] = field(default_factory=list)
+    remaining_issue_ids: List[str] = field(default_factory=list)
+    revision_notes: List[str] = field(default_factory=list)

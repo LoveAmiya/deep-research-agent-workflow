@@ -2,9 +2,11 @@ import json
 import unittest
 
 from agents.base_agent import AgentContext
+from agents.blue_agent import BlueAgent
 from agents.critic_agent import CriticAgent
 from agents.planner_agent import PlannerAgent
 from agents.reader_agent import ReaderAgent
+from agents.red_agent import RedAgent
 from agents.searcher_agent import SearcherAgent
 from agents.writer_agent import WriterAgent
 from core.schema import Finding, ResearchQuestion
@@ -143,6 +145,8 @@ class TestSharedMemory(unittest.TestCase):
         reader = ReaderAgent()
         writer = WriterAgent()
         critic = CriticAgent()
+        red = RedAgent()
+        blue = BlueAgent()
         graph = build_minimal_research_graph()
         handlers = {
             "planner_task": lambda outputs, node: planner.run(
@@ -183,6 +187,28 @@ class TestSharedMemory(unittest.TestCase):
                     memory=memory,
                 )
             ),
+            "red_review_task": lambda outputs, node: red.run(
+                AgentContext(
+                    task_id=node.task_id,
+                    inputs={
+                        "report": outputs["writer_task"].output,
+                        "findings": outputs["reader_task"].output,
+                        "critic_review": outputs["critic_task"].output,
+                    },
+                    memory=memory,
+                )
+            ),
+            "blue_revision_task": lambda outputs, node: blue.run(
+                AgentContext(
+                    task_id=node.task_id,
+                    inputs={
+                        "report": outputs["writer_task"].output,
+                        "red_review": outputs["red_review_task"].output,
+                        "findings": outputs["reader_task"].output,
+                    },
+                    memory=memory,
+                )
+            ),
         }
 
         result = DAGExecutor(graph=graph, handlers=handlers).execute()
@@ -193,6 +219,8 @@ class TestSharedMemory(unittest.TestCase):
         self.assertEqual(len(memory.list_by_type("findings")), 1)
         self.assertEqual(len(memory.list_by_type("report")), 1)
         self.assertEqual(len(memory.list_by_type("review")), 1)
+        self.assertEqual(len(memory.list_by_type("red_review")), 1)
+        self.assertEqual(len(memory.list_by_type("blue_revision")), 1)
 
 
 if __name__ == "__main__":

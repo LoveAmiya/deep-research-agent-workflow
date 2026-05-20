@@ -1,9 +1,11 @@
 import unittest
 
 from agents.base_agent import AgentContext
+from agents.blue_agent import BlueAgent
 from agents.critic_agent import CriticAgent
 from agents.planner_agent import PlannerAgent
 from agents.reader_agent import ReaderAgent
+from agents.red_agent import RedAgent
 from agents.searcher_agent import SearcherAgent
 from agents.writer_agent import WriterAgent
 from core.schema import ResearchQuestion, ResearchReport
@@ -30,7 +32,15 @@ class TestTaskGraph(unittest.TestCase):
 
         self.assertEqual(
             [node.task_id for node in order],
-            ["planner_task", "search_task", "reader_task", "writer_task", "critic_task"],
+            [
+                "planner_task",
+                "search_task",
+                "reader_task",
+                "writer_task",
+                "critic_task",
+                "red_review_task",
+                "blue_revision_task",
+            ],
         )
 
     def test_missing_dependency_raises_error(self) -> None:
@@ -80,6 +90,8 @@ class TestDAGExecutor(unittest.TestCase):
         self.reader = ReaderAgent()
         self.writer = WriterAgent()
         self.critic = CriticAgent()
+        self.red = RedAgent()
+        self.blue = BlueAgent()
 
     def test_executor_runs_pipeline_in_order(self) -> None:
         graph = build_minimal_research_graph()
@@ -134,6 +146,32 @@ class TestDAGExecutor(unittest.TestCase):
                     },
                 ),
             ),
+            "red_review_task": lambda outputs, node: self._record_and_run(
+                call_order,
+                "red_review_task",
+                self.red.run,
+                AgentContext(
+                    task_id="red_review_task",
+                    inputs={
+                        "report": outputs["writer_task"].output,
+                        "findings": outputs["reader_task"].output,
+                        "critic_review": outputs["critic_task"].output,
+                    },
+                ),
+            ),
+            "blue_revision_task": lambda outputs, node: self._record_and_run(
+                call_order,
+                "blue_revision_task",
+                self.blue.run,
+                AgentContext(
+                    task_id="blue_revision_task",
+                    inputs={
+                        "report": outputs["writer_task"].output,
+                        "red_review": outputs["red_review_task"].output,
+                        "findings": outputs["reader_task"].output,
+                    },
+                ),
+            ),
         }
 
         result = DAGExecutor(graph=graph, handlers=handlers).execute()
@@ -141,7 +179,15 @@ class TestDAGExecutor(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual(
             call_order,
-            ["planner_task", "search_task", "reader_task", "writer_task", "critic_task"],
+            [
+                "planner_task",
+                "search_task",
+                "reader_task",
+                "writer_task",
+                "critic_task",
+                "red_review_task",
+                "blue_revision_task",
+            ],
         )
 
     def test_execution_result_contains_research_report(self) -> None:
@@ -236,6 +282,26 @@ class TestDAGExecutor(unittest.TestCase):
                     task_id="critic_task",
                     inputs={
                         "report": outputs["writer_task"].output,
+                        "findings": outputs["reader_task"].output,
+                    },
+                )
+            ),
+            "red_review_task": lambda outputs, node: self.red.run(
+                AgentContext(
+                    task_id="red_review_task",
+                    inputs={
+                        "report": outputs["writer_task"].output,
+                        "findings": outputs["reader_task"].output,
+                        "critic_review": outputs["critic_task"].output,
+                    },
+                )
+            ),
+            "blue_revision_task": lambda outputs, node: self.blue.run(
+                AgentContext(
+                    task_id="blue_revision_task",
+                    inputs={
+                        "report": outputs["writer_task"].output,
+                        "red_review": outputs["red_review_task"].output,
                         "findings": outputs["reader_task"].output,
                     },
                 )

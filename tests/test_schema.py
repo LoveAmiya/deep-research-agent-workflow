@@ -1,6 +1,15 @@
 import unittest
 
-from core.schema import Finding, ResearchPlan, ResearchQuestion, ResearchReport, SearchResult
+from core.schema import (
+    BlueRevisionResult,
+    Finding,
+    RedReviewResult,
+    ResearchPlan,
+    ResearchQuestion,
+    ResearchReport,
+    ReviewIssue,
+    SearchResult,
+)
 
 
 class TestSchemaInitialization(unittest.TestCase):
@@ -68,6 +77,38 @@ class TestSchemaInitialization(unittest.TestCase):
         self.assertEqual(report.question_id, "q-001")
         self.assertEqual(report.findings[0].finding_id, "f-001")
         self.assertEqual(report.references[0], "https://example.com/source")
+
+    def test_review_related_schema_initialization(self) -> None:
+        issue = ReviewIssue(
+            issue_id="issue-1",
+            category="citation",
+            severity="medium",
+            message="References section is missing.",
+            evidence="No references detected",
+            suggestion="Add a References section.",
+        )
+        report = ResearchReport(
+            title="Revised Report",
+            question="How should teams evaluate evidence quality?",
+            sections=[{"title": "References", "content": "- mock://source/1"}],
+            citations=["mock://source/1"],
+            markdown="# Revised Report\n\n## References\n\n- mock://source/1",
+        )
+        red_result = RedReviewResult(
+            passed=False,
+            issues=[issue],
+            summary="Found 1 issue.",
+        )
+        blue_result = BlueRevisionResult(
+            revised_report=report,
+            fixed_issue_ids=["issue-1"],
+            remaining_issue_ids=[],
+            revision_notes=["Added References section."],
+        )
+
+        self.assertEqual(red_result.issues[0].issue_id, "issue-1")
+        self.assertEqual(blue_result.revised_report.title, "Revised Report")
+        self.assertEqual(blue_result.fixed_issue_ids, ["issue-1"])
 
 
 if __name__ == "__main__":
