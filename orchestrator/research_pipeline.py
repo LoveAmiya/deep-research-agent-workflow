@@ -4,6 +4,7 @@ from agents.critic_agent import CriticAgent
 from agents.planner_agent import PlannerAgent
 from agents.reader_agent import ReaderAgent
 from agents.red_agent import RedAgent
+from agents.red_blue_loop import RedBlueLoopConfig, RedBlueLoopRunner
 from agents.searcher_agent import SearcherAgent
 from agents.writer_agent import WriterAgent
 from core.schema import ResearchQuestion
@@ -74,6 +75,38 @@ def build_minimal_research_graph() -> TaskGraph:
 
 
 def run_research_pipeline(
+    question_text: str,
+    llm_client=None,
+    search_tool=None,
+    fetch_tool=None,
+    citation_registry=None,
+    use_red_blue_loop: bool = False,
+    red_blue_loop_config: RedBlueLoopConfig | None = None,
+) -> dict:
+    components = build_research_pipeline_components(
+        question_text=question_text,
+        llm_client=llm_client,
+        search_tool=search_tool,
+        fetch_tool=fetch_tool,
+        citation_registry=citation_registry,
+    )
+    graph = components["graph"]
+    handlers = components["handlers"]
+    citation_registry = components["citation_registry"]
+    memory = components["memory"]
+    question = components["question"]
+    execution = DAGExecutor(graph=graph, handlers=handlers).execute()
+    return build_research_pipeline_result(
+        question=question,
+        memory=memory,
+        citation_registry=citation_registry,
+        execution=execution,
+        use_red_blue_loop=use_red_blue_loop,
+        red_blue_loop_config=red_blue_loop_config,
+    )
+
+
+def build_research_pipeline_components(
     question_text: str,
     llm_client=None,
     search_tool=None,
@@ -181,21 +214,58 @@ def run_research_pipeline(
             )
         ),
     }
-    execution = DAGExecutor(graph=graph, handlers=handlers).execute()
+    return {
+        "question": question,
+        "memory": memory,
+        "citation_registry": citation_registry,
+        "graph": graph,
+        "handlers": handlers,
+    }
+
+
+def build_research_pipeline_result(
+    question: ResearchQuestion,
+    memory: SharedMemory,
+    citation_registry: CitationRegistry,
+    execution,
+    use_red_blue_loop: bool = False,
+    red_blue_loop_config: RedBlueLoopConfig | None = None,
+) -> dict:
     outputs = execution.outputs
     blue_revision = outputs["blue_revision_task"].output
+    red_blue_loop_result = None
+    final_report = blue_revision.revised_report
+    if use_red_blue_loop:
+        red_blue_loop_result = RedBlueLoopRunner(
+            red_agent=RedAgent(),
+            blue_agent=BlueAgent(),
+            config=red_blue_loop_config,
+        ).run(
+            AgentContext(
+                task_id="red_blue_loop",
+                inputs={"citation_registry": citation_registry},
+                metadata={"agent_name": "RedBlueLoopRunner"},
+                memory=memory,
+            ),
+            report=outputs["writer_task"].output,
+            findings=outputs["reader_task"].output,
+            critic_review=outputs["critic_task"].output,
+        )
+        final_report = red_blue_loop_result.final_report
     citation_validation = CitationValidator().validate_report_citations(
-        blue_revision.revised_report,
+        final_report,
         citation_registry,
     )
     return {
         "question": question,
-        "report": blue_revision.revised_report,
+        "report": final_report,
+        "final_report": final_report,
         "initial_report": outputs["writer_task"].output,
         "findings": outputs["reader_task"].output,
         "critic_review": outputs["critic_task"].output,
         "red_review": outputs["red_review_task"].output,
         "blue_revision": blue_revision,
+        "red_blue_loop_result": red_blue_loop_result,
         "memory_items": memory.to_dict_list(),
         "memory": memory,
         "citation_registry": citation_registry,

@@ -30,6 +30,21 @@ class SearchConfig:
     user_agent: str = DEFAULT_USER_AGENT
 
 
+@dataclass
+class DAGExecutionConfig:
+    use_async: bool = False
+    max_concurrency: int = 3
+    task_timeout_seconds: Optional[float] = None
+
+
+@dataclass
+class RedBlueLoopExecutionConfig:
+    enabled: bool = False
+    max_rounds: int = 3
+    stop_if_no_improvement_rounds: int = 2
+    enable_oscillation_detection: bool = True
+
+
 def _load_dotenv_file(path: str = ".env") -> None:
     dotenv_path = Path(path)
     if not dotenv_path.exists() or not dotenv_path.is_file():
@@ -98,4 +113,33 @@ def load_search_config_from_env(load_dotenv: bool = False) -> SearchConfig:
         max_results=_parse_int_env("DEEP_RESEARCH_SEARCH_MAX_RESULTS", 5),
         timeout_seconds=_parse_float_env("DEEP_RESEARCH_SEARCH_TIMEOUT_SECONDS", 15.0),
         user_agent=os.getenv("DEEP_RESEARCH_USER_AGENT", DEFAULT_USER_AGENT),
+    )
+
+
+def load_dag_execution_config_from_env(load_dotenv: bool = False) -> DAGExecutionConfig:
+    _maybe_load_dotenv(load_dotenv)
+    timeout_raw = os.getenv("DEEP_RESEARCH_DAG_TASK_TIMEOUT_SECONDS", "").strip()
+    timeout_seconds = None
+    if timeout_raw:
+        timeout_seconds = _parse_float_env("DEEP_RESEARCH_DAG_TASK_TIMEOUT_SECONDS", 0.0)
+        if timeout_seconds <= 0:
+            timeout_seconds = None
+    return DAGExecutionConfig(
+        use_async=_parse_bool_env("DEEP_RESEARCH_USE_ASYNC_DAG"),
+        max_concurrency=_parse_int_env("DEEP_RESEARCH_DAG_MAX_CONCURRENCY", 3),
+        task_timeout_seconds=timeout_seconds,
+    )
+
+
+def load_red_blue_loop_config_from_env(load_dotenv: bool = False) -> RedBlueLoopExecutionConfig:
+    _maybe_load_dotenv(load_dotenv)
+    oscillation_raw = os.getenv("DEEP_RESEARCH_RED_BLUE_OSCILLATION_DETECTION", "true")
+    return RedBlueLoopExecutionConfig(
+        enabled=_parse_bool_env("DEEP_RESEARCH_USE_RED_BLUE_LOOP"),
+        max_rounds=_parse_int_env("DEEP_RESEARCH_RED_BLUE_MAX_ROUNDS", 3),
+        stop_if_no_improvement_rounds=_parse_int_env(
+            "DEEP_RESEARCH_RED_BLUE_NO_IMPROVEMENT_ROUNDS",
+            2,
+        ),
+        enable_oscillation_detection=oscillation_raw.strip().lower() not in {"0", "false"},
     )

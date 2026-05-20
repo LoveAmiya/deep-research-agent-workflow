@@ -60,6 +60,18 @@ def red_blue_improvement(red_review, blue_revision) -> float:
     return min(1.0, fixed / len(issues))
 
 
+def iterative_red_blue_score(loop_result) -> float:
+    if loop_result is None:
+        return 0.0
+    if getattr(loop_result, "passed", False):
+        return 1.0
+    fixed = getattr(loop_result, "total_fixed_issues", 0)
+    remaining = getattr(loop_result, "remaining_issue_count", 0)
+    if fixed + remaining == 0:
+        return 1.0
+    return min(1.0, fixed / (fixed + remaining))
+
+
 def memory_completeness(memory_items: List[Dict[str, Any]]) -> float:
     if not REQUIRED_MEMORY_TYPES:
         return 1.0
@@ -83,7 +95,7 @@ def summarize_eval_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         }
 
     failed_cases = sum(1 for result in results if not result.get("success", False))
-    return {
+    summary = {
         "total_cases": total_cases,
         "failed_cases": failed_cases,
         "average_section_coverage": _average(results, "section_coverage"),
@@ -94,6 +106,12 @@ def summarize_eval_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         "average_red_blue_improvement": _average(results, "red_blue_improvement"),
         "average_memory_completeness": _average(results, "memory_completeness"),
     }
+    if any("iterative_red_blue_score" in result.get("metrics", {}) for result in results):
+        summary["average_iterative_red_blue_score"] = _average(
+            results,
+            "iterative_red_blue_score",
+        )
+    return summary
 
 
 def _average(results: List[Dict[str, Any]], key: str) -> float:

@@ -1,6 +1,15 @@
 """Core data structures for DeepResearchAgent."""
 
-from .config import LLMConfig, SearchConfig, load_llm_config_from_env, load_search_config_from_env
+from .config import (
+    DAGExecutionConfig,
+    LLMConfig,
+    RedBlueLoopExecutionConfig,
+    SearchConfig,
+    load_dag_execution_config_from_env,
+    load_llm_config_from_env,
+    load_red_blue_loop_config_from_env,
+    load_search_config_from_env,
+)
 from .llm_client import (
     BaseLLMClient,
     LLMClientError,
@@ -31,6 +40,7 @@ __all__ = [
     "BaseLLMClient",
     "BlueRevisionResult",
     "Citation",
+    "DAGExecutionConfig",
     "EvidenceSpan",
     "Finding",
     "GroundedFinding",
@@ -42,6 +52,7 @@ __all__ = [
     "OpenAICompatibleLLMClient",
     "PageContent",
     "RedReviewResult",
+    "RedBlueLoopExecutionConfig",
     "ResearchPlan",
     "ResearchQuestion",
     "ResearchReport",
@@ -50,7 +61,9 @@ __all__ = [
     "SearchConfig",
     "WebSearchResult",
     "create_llm_client",
+    "load_dag_execution_config_from_env",
     "load_llm_config_from_env",
+    "load_red_blue_loop_config_from_env",
     "load_search_config_from_env",
     "load_prompt",
 ]

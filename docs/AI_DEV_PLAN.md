@@ -93,8 +93,26 @@ This document defines the staged implementation plan for DeepResearchAgent.
 - Let ReaderAgent create evidence/citation IDs for findings
 - Let WriterAgent generate `[C1]` citation markers and registry-backed References
 - Extend Critic/Red/Blue and evaluation with citation grounding checks
+- Status: completed
+
+## Phase 12: Async DAG Executor
+
+- Add an optional asyncio-based `AsyncDAGExecutor`
+- Support dependency-aware scheduling after prerequisites succeed
+- Support sync and async handlers
+- Add `max_concurrency`, per-task timeout, async traces, and failure propagation
+- Keep the synchronous `DAGExecutor` as the default stable path
+- Status: completed
+
+## Phase 13: Iterative Red-Blue Loop
+
+- Add `RedBlueLoopRunner` for bounded rule-based multi-round review/revision
+- Add loop config, round result, and loop result dataclasses
+- Stop on Red pass, max rounds, no improvement, repeated issue signatures, or agent failure
+- Keep single-round Red/Blue behavior as the default path
+- Add optional evaluation metric for iterative Red/Blue score
 - Status: current phase
 
 ## Current Implementation Boundary
 
-The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM and optional standard-library web search/fetch when configured. Citation grounding is rule-based through local evidence/citation IDs; the project does not perform semantic fact verification, concurrent DAG execution, vector retrieval, LLM-as-Judge, or complex benchmark evaluation.
+The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM, optional standard-library web search/fetch, optional local asyncio DAG execution, and optional bounded iterative Red/Blue review when configured. Citation grounding is rule-based through local evidence/citation IDs; the project does not perform semantic fact verification, distributed execution, checkpoint/resume, vector retrieval, LLM-as-Judge, complex scoring, or complex benchmark evaluation.

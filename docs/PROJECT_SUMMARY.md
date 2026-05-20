@@ -2,7 +2,7 @@
 
 ## One-Sentence Summary
 
-DeepResearchAgent is a deterministic-by-default multi-agent research workflow prototype with optional LLM assistance, optional web search/fetch, citation grounding, DAG orchestration, shared memory, rule-based review/revision, and local evaluation.
+DeepResearchAgent is a deterministic-by-default multi-agent research workflow prototype with optional LLM assistance, optional web search/fetch, citation grounding, sync/async DAG orchestration, shared memory, bounded rule-based Red/Blue review/revision, and local evaluation.
 
 ## Tech Stack
 
@@ -18,7 +18,8 @@ DeepResearchAgent is a deterministic-by-default multi-agent research workflow pr
 
 - `core/schema.py`: data contracts for questions, plans, findings, reports, and review results
 - `agents/`: planner, searcher, reader, writer, critic, red, and blue agents
-- `orchestrator/`: DAG nodes, graph validation, sequential executor, trace recording, and pipeline runner
+- `agents/red_blue_loop.py`: optional bounded iterative Red/Blue runner
+- `orchestrator/`: DAG nodes, graph validation, sync/async executors, trace recording, and pipeline runner
 - `memory/`: in-memory shared memory store and simple finding truncation helper
 - `tools/`: mock and optional web search/fetch tools
 - `tools/citation_tool.py`: in-memory evidence/citation registry and validator
@@ -45,9 +46,11 @@ ResearchQuestion
 
 - multi-agent role separation through `AgentContext` and `AgentResult`
 - DAG task graph with dependency validation and sequential topological execution
+- optional asyncio DAG executor with max concurrency, timeout, and failure propagation
 - SharedMemory for intermediate artifacts
 - rule-based CriticAgent checks
 - single-round RedAgent / BlueAgent review and revision
+- optional iterative Red/Blue loop with convergence and oscillation guards
 - ResearchBench-mini local evaluation with deterministic rule metrics
 - mock search pipeline that keeps runs reproducible and dependency-free
 - optional prompt system and LLM client with deterministic fallback
@@ -58,10 +61,11 @@ ResearchQuestion
 
 - web search and fetch are optional lightweight integrations, not production-grade retrieval
 - citation grounding is rule-based and does not perform semantic fact verification
-- no async or concurrent DAG execution
+- async DAG execution is local asyncio scheduling, not distributed execution
 - no vector database or embeddings
 - no long-term memory
 - no LLM-as-Judge
+- no complex scoring or adversarial training
 - no complex benchmark framework
 
 ## Future Extensions

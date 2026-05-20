@@ -6,6 +6,7 @@ from evaluation.metrics import (
     citation_coverage,
     citation_grounding_score,
     finding_coverage,
+    iterative_red_blue_score,
     keyword_coverage,
     memory_completeness,
     red_blue_improvement,
@@ -26,7 +27,11 @@ def load_cases(path: str | Path) -> List[Dict[str, Any]]:
 
 
 def run_case(case: Dict[str, Any]) -> Dict[str, Any]:
-    pipeline_result = run_research_pipeline(case["question"])
+    use_red_blue_loop = bool(case.get("use_red_blue_loop", False))
+    pipeline_result = run_research_pipeline(
+        case["question"],
+        use_red_blue_loop=use_red_blue_loop,
+    )
     report = pipeline_result["report"]
     findings = pipeline_result["findings"]
     red_review = pipeline_result["red_review"]
@@ -42,6 +47,10 @@ def run_case(case: Dict[str, Any]) -> Dict[str, Any]:
         "red_blue_improvement": red_blue_improvement(red_review, blue_revision),
         "memory_completeness": memory_completeness(memory_items),
     }
+    if use_red_blue_loop:
+        metrics["iterative_red_blue_score"] = iterative_red_blue_score(
+            pipeline_result.get("red_blue_loop_result")
+        )
     success = pipeline_result["success"] and all(value >= 1.0 for value in metrics.values())
     return {
         "case_id": case["id"],

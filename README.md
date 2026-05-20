@@ -6,7 +6,7 @@ The current implementation is a deterministic local prototype by default. Search
 
 ## Current Status
 
-The repository is currently at Phase 11: Evidence Grounding + Citation.
+The repository is currently at Phase 13: Iterative Red-Blue Loop.
 
 Implemented capabilities:
 
@@ -23,8 +23,10 @@ Implemented capabilities:
 - optional OpenAI-compatible LLM client with deterministic fallback
 - optional standard-library web search and webpage fetch with mock fallback
 - lightweight evidence spans, citation IDs, citation markers, and citation validation
+- optional asyncio DAG executor with max concurrency, timeout, and async traces
+- optional iterative rule-based Red/Blue review loop with bounded convergence checks
 
-This phase does not include semantic evidence verification, concurrent execution, vector memory, LLM-as-judge, Bootstrap CI, Cohen's d, or external benchmark downloads.
+This phase does not include semantic evidence verification, distributed execution, checkpoint/resume, vector memory, LLM-as-judge, Bootstrap CI, Cohen's d, or external benchmark downloads.
 
 ## Directory Structure
 
@@ -87,6 +89,31 @@ set DEEP_RESEARCH_SEARCH_TIMEOUT_SECONDS=15
 
 If real search or fetch fails, the pipeline falls back to mock search results or snippets.
 
+## Optional Async DAG Mode
+
+By default the project uses the synchronous `DAGExecutor`. To run the demo through `AsyncDAGExecutor`, set:
+
+```bash
+set DEEP_RESEARCH_USE_ASYNC_DAG=1
+set DEEP_RESEARCH_DAG_MAX_CONCURRENCY=3
+set DEEP_RESEARCH_DAG_TASK_TIMEOUT_SECONDS=30
+```
+
+The async executor supports dependency-aware scheduling, sync and async handlers, max concurrency, timeout, and failure propagation.
+
+## Optional Iterative Red-Blue Mode
+
+By default the project uses the original single-round Red/Blue review. To enable bounded iterative review:
+
+```bash
+set DEEP_RESEARCH_USE_RED_BLUE_LOOP=1
+set DEEP_RESEARCH_RED_BLUE_MAX_ROUNDS=3
+set DEEP_RESEARCH_RED_BLUE_NO_IMPROVEMENT_ROUNDS=2
+set DEEP_RESEARCH_RED_BLUE_OSCILLATION_DETECTION=true
+```
+
+The loop stops on Red pass, max rounds, no improvement, repeated remaining issue signatures, or agent failure.
+
 ## Run Evaluation
 
 ```bash
@@ -99,11 +126,11 @@ This runs local ResearchBench-mini style JSONL cases and prints rule metric aver
 
 - real web search and webpage fetch are optional and lightweight, not production-grade
 - citation grounding is rule-based and not semantic fact verification
-- no complex concurrent DAG execution
+- async DAG execution is local asyncio scheduling, not distributed execution
 - no vector memory or embeddings
 - no LLM-as-Judge
 - no complex ResearchBench implementation
-- Red/Blue review is deterministic and single-round
+- Red/Blue review is deterministic; iterative mode is bounded and rule-based
 
 ## Planned Roadmap
 
@@ -119,5 +146,7 @@ This runs local ResearchBench-mini style JSONL cases and prints rule metric aver
 - Phase 9: Optional LLM client and prompt system
 - Phase 10: Optional real web search and webpage fetch
 - Phase 11: Evidence grounding and citation validation
+- Phase 12: Optional async DAG executor
+- Phase 13: Optional iterative Red-Blue loop
 
 Future work can add semantic evidence verification, better source parsing, persistent memory, richer LLM-backed agents, and stronger evaluation.

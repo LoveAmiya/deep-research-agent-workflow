@@ -1,5 +1,14 @@
-from core.config import load_llm_config_from_env, load_search_config_from_env
+import asyncio
+
+from core.config import (
+    load_dag_execution_config_from_env,
+    load_llm_config_from_env,
+    load_red_blue_loop_config_from_env,
+    load_search_config_from_env,
+)
 from core.llm_client import MockLLMClient, create_llm_client
+from agents.red_blue_loop import RedBlueLoopConfig
+from orchestrator.async_research_pipeline import async_run_research_pipeline
 from orchestrator.research_pipeline import run_research_pipeline
 from tools.fetch_tool import MockFetchTool, create_fetch_tool
 from tools.search_tool import MockSearchTool, create_search_tool
@@ -11,20 +20,45 @@ DEMO_QUESTION = "What are the main factors that affect open-source LLM adoption 
 def build_demo_execution(load_dotenv: bool = False) -> dict:
     llm_config = load_llm_config_from_env(load_dotenv=load_dotenv)
     search_config = load_search_config_from_env(load_dotenv=load_dotenv)
+    dag_config = load_dag_execution_config_from_env(load_dotenv=load_dotenv)
+    red_blue_loop_execution_config = load_red_blue_loop_config_from_env(load_dotenv=load_dotenv)
+    red_blue_loop_config = RedBlueLoopConfig(
+        max_rounds=red_blue_loop_execution_config.max_rounds,
+        stop_if_no_improvement_rounds=red_blue_loop_execution_config.stop_if_no_improvement_rounds,
+        enable_oscillation_detection=red_blue_loop_execution_config.enable_oscillation_detection,
+    )
     llm_client = create_llm_client(llm_config)
     search_tool = create_search_tool(search_config)
     fetch_tool = create_fetch_tool(search_config)
-    result = run_research_pipeline(
-        DEMO_QUESTION,
-        llm_client=llm_client,
-        search_tool=search_tool,
-        fetch_tool=fetch_tool,
-    )
+    if dag_config.use_async:
+        result = asyncio.run(
+            async_run_research_pipeline(
+                DEMO_QUESTION,
+                llm_client=llm_client,
+                search_tool=search_tool,
+                fetch_tool=fetch_tool,
+                max_concurrency=dag_config.max_concurrency,
+                task_timeout_seconds=dag_config.task_timeout_seconds,
+                use_red_blue_loop=red_blue_loop_execution_config.enabled,
+                red_blue_loop_config=red_blue_loop_config,
+            )
+        )
+    else:
+        result = run_research_pipeline(
+            DEMO_QUESTION,
+            llm_client=llm_client,
+            search_tool=search_tool,
+            fetch_tool=fetch_tool,
+            use_red_blue_loop=red_blue_loop_execution_config.enabled,
+            red_blue_loop_config=red_blue_loop_config,
+        )
     result["llm_config"] = llm_config
     result["llm_client"] = llm_client
     result["search_config"] = search_config
     result["search_tool"] = search_tool
     result["fetch_tool"] = fetch_tool
+    result["dag_config"] = dag_config
+    result["red_blue_loop_execution_config"] = red_blue_loop_execution_config
     return result
 
 
@@ -51,6 +85,9 @@ def main() -> None:
     search_config = execution["search_config"]
     search_tool = execution["search_tool"]
     fetch_tool = execution["fetch_tool"]
+    dag_config = execution["dag_config"]
+    red_blue_loop_execution_config = execution["red_blue_loop_execution_config"]
+    red_blue_loop_result = execution.get("red_blue_loop_result")
     dag_outputs = execution["execution"].outputs
     search_metadata = dag_outputs["search_task"].metadata
     reader_metadata = dag_outputs["reader_task"].metadata
@@ -59,6 +96,10 @@ def main() -> None:
     print(f"LLM provider/model: {llm_config.provider}/{llm_config.model or 'not-configured'}")
     if isinstance(llm_client, MockLLMClient):
         print("LLM mode: mock")
+    print(f"DAG mode: {'async' if dag_config.use_async else 'sync'}")
+    if dag_config.use_async:
+        print(f"DAG max_concurrency: {dag_config.max_concurrency}")
+        print(f"DAG task_timeout_seconds: {dag_config.task_timeout_seconds}")
     print(f"Web search enabled: {search_config.enabled}")
     print(f"Search provider: {search_config.provider}")
     print(f"Search mode: {'mock' if isinstance(search_tool, MockSearchTool) else search_tool.provider}")
@@ -72,6 +113,13 @@ def main() -> None:
     print(f"Citation count: {citation_validation['citation_count']}")
     print(f"Grounded citation count: {citation_validation['grounded_citation_count']}")
     print(f"Citation validation passed: {citation_validation['passed']}")
+    print(f"Red-Blue loop enabled: {red_blue_loop_execution_config.enabled}")
+    if red_blue_loop_execution_config.enabled and red_blue_loop_result is not None:
+        print(f"Red-Blue max_rounds: {red_blue_loop_execution_config.max_rounds}")
+        print(f"Red-Blue loop rounds: {len(red_blue_loop_result.rounds)}")
+        print(f"Red-Blue loop stop_reason: {red_blue_loop_result.stop_reason}")
+        print(f"Red-Blue loop total_fixed_issues: {red_blue_loop_result.total_fixed_issues}")
+        print(f"Red-Blue loop remaining_issue_count: {red_blue_loop_result.remaining_issue_count}")
     print()
     print(final_report.markdown)
     print()
