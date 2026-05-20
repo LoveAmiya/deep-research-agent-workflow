@@ -42,6 +42,8 @@ set DEEP_RESEARCH_LLM_TIMEOUT_SECONDS=60
 
 Do not commit API keys. If required fields are missing, the system falls back to `MockLLMClient`.
 
+`main.py` can also read these variables from a local `.env` file. The `.env` file is ignored by git and should never be committed.
+
 ## Current Boundaries
 
 Phase 9 does not implement:

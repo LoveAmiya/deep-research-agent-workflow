@@ -1,6 +1,6 @@
 """Core data structures for DeepResearchAgent."""
 
-from .config import LLMConfig, load_llm_config_from_env
+from .config import LLMConfig, SearchConfig, load_llm_config_from_env, load_search_config_from_env
 from .llm_client import (
     BaseLLMClient,
     LLMClientError,
@@ -14,12 +14,14 @@ from .prompt_loader import load_prompt
 from .schema import (
     BlueRevisionResult,
     Finding,
+    PageContent,
     RedReviewResult,
     ResearchPlan,
     ResearchQuestion,
     ResearchReport,
     ReviewIssue,
     SearchResult,
+    WebSearchResult,
 )
 
 __all__ = [
@@ -32,13 +34,17 @@ __all__ = [
     "LLMResponse",
     "MockLLMClient",
     "OpenAICompatibleLLMClient",
+    "PageContent",
     "RedReviewResult",
     "ResearchPlan",
     "ResearchQuestion",
     "ResearchReport",
     "ReviewIssue",
     "SearchResult",
+    "SearchConfig",
+    "WebSearchResult",
     "create_llm_client",
     "load_llm_config_from_env",
+    "load_search_config_from_env",
     "load_prompt",
 ]

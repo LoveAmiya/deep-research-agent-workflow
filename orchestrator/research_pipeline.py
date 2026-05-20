@@ -72,7 +72,7 @@ def build_minimal_research_graph() -> TaskGraph:
     return graph
 
 
-def run_research_pipeline(question_text: str, llm_client=None) -> dict:
+def run_research_pipeline(question_text: str, llm_client=None, search_tool=None, fetch_tool=None) -> dict:
     question = ResearchQuestion(question=question_text)
     planner = PlannerAgent()
     searcher = SearcherAgent()
@@ -97,7 +97,7 @@ def run_research_pipeline(question_text: str, llm_client=None) -> dict:
         "search_task": lambda outputs, node: searcher.run(
             AgentContext(
                 task_id=node.task_id,
-                inputs={"plan": outputs["planner_task"].output},
+                inputs={"plan": outputs["planner_task"].output, "search_tool": search_tool},
                 metadata={"agent_name": searcher.name},
                 memory=memory,
                 llm_client=llm_client,
@@ -106,7 +106,7 @@ def run_research_pipeline(question_text: str, llm_client=None) -> dict:
         "reader_task": lambda outputs, node: reader.run(
             AgentContext(
                 task_id=node.task_id,
-                inputs={"search_results": outputs["search_task"].output},
+                inputs={"search_results": outputs["search_task"].output, "fetch_tool": fetch_tool},
                 metadata={"agent_name": reader.name},
                 memory=memory,
                 llm_client=llm_client,

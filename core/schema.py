@@ -46,6 +46,24 @@ class SearchResult:
 
 
 @dataclass
+class WebSearchResult:
+    title: str
+    url: str
+    snippet: str
+    source: str = "web"
+
+
+@dataclass
+class PageContent:
+    url: str
+    title: Optional[str]
+    text: str
+    status_code: Optional[int]
+    fetched: bool
+    error: Optional[str] = None
+
+
+@dataclass
 class Finding:
     claim: str
     evidence: str

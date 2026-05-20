@@ -75,8 +75,17 @@ This document defines the staged implementation plan for DeepResearchAgent.
 - Add OpenAI-compatible HTTP client using Python standard library
 - Add prompt templates for Planner, Writer, Critic, Red, and Blue agents
 - Allow selected agents to optionally call LLM and fall back to deterministic local logic
+- Status: completed
+
+## Phase 10: Real Web Search and Fetch
+
+- Add `SearchTool` and `FetchTool` interfaces
+- Keep `MockSearchTool` and `MockFetchTool` as deterministic defaults
+- Add optional DuckDuckGo HTML search using Python standard library
+- Add optional simple webpage fetching and text extraction using Python standard library
+- Let SearcherAgent and ReaderAgent fall back safely when real search/fetch fails
 - Status: current phase
 
 ## Current Implementation Boundary
 
-The project remains deterministic by default and uses mock search. It can optionally call an OpenAI-compatible LLM when configured, but it does not perform real online search, webpage crawling, evidence grounding, concurrent DAG execution, vector retrieval, LLM-as-Judge, or complex benchmark evaluation.
+The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM and optional standard-library web search/fetch when configured, but it does not perform production-grade evidence grounding, concurrent DAG execution, vector retrieval, LLM-as-Judge, or complex benchmark evaluation.
