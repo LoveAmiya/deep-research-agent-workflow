@@ -4,18 +4,20 @@ DeepResearchAgent is a multi-agent system for complex, open-ended research workf
 
 ## Current Status
 
-The repository is currently at Phase 1: Minimal Deep Research Pipeline.
+The repository is currently at Phase 2: DAG Orchestrator.
 
-Phase 1 currently provides:
+Phase 2 currently provides:
 
-- a sequential multi-agent research pipeline
+- a minimal multi-agent research pipeline
 - deterministic plan generation without LLM calls
 - mock search results without real network access
 - finding extraction from mock snippets
 - markdown report generation
-- unit tests for schema and full pipeline execution
+- a lightweight DAG task graph and sequential executor
+- in-memory execution traces
+- unit tests for schema, pipeline execution, and DAG orchestration
 
-This phase does not include real LLM calls, online search, DAG orchestration, shared memory, red-blue review, or evaluation pipelines.
+This phase does not include real LLM calls, online search, concurrent execution, shared memory, red-blue review, or evaluation pipelines.
 
 ## Run
 
