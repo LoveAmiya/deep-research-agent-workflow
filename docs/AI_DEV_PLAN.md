@@ -60,6 +60,14 @@ This document defines the staged implementation plan for DeepResearchAgent.
 - Prepare architecture explanation and interview-oriented materials
 - Status: completed as documentation-only finalization
 
+## Phase 8: Final Acceptance and Packaging
+
+- Run final tests, evaluation, and demo commands
+- Check documentation consistency against the implemented code
+- Remove generated caches and temporary artifacts from the package
+- Create the final distributable zip archive
+- Status: current packaging phase
+
 ## Current Implementation Boundary
 
 The project remains a deterministic local prototype. It does not perform real LLM calls, real online search, concurrent DAG execution, vector retrieval, LLM-as-Judge, or complex benchmark evaluation.

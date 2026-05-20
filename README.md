@@ -6,7 +6,7 @@ The current implementation is a deterministic local prototype. Search results ar
 
 ## Current Status
 
-The repository is currently at Phase 7: Documentation and Interview Materials.
+The repository is currently at Phase 8: Final Acceptance and Packaging.
 
 Implemented capabilities:
 
@@ -85,5 +85,6 @@ This runs local ResearchBench-mini style JSONL cases and prints rule metric aver
 - Phase 5: Red-Blue review
 - Phase 6: Evaluation
 - Phase 7: Documentation and interview materials
+- Phase 8: Final acceptance, consistency check, and packaging
 
 Future work can replace mock search and deterministic writing/review logic with real search, LLM-backed agents, persistent memory, richer source grounding, and stronger evaluation.
