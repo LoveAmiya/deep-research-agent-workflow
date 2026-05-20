@@ -45,6 +45,7 @@ def main() -> None:
     blue_revision = execution["blue_revision"]
     memory = execution["memory"]
     final_report = execution["report"]
+    citation_validation = execution["citation_validation"]
     llm_config = execution["llm_config"]
     llm_client = execution["llm_client"]
     search_config = execution["search_config"]
@@ -68,6 +69,9 @@ def main() -> None:
             f"search_fallback={search_metadata.get('fallback_used')}, "
             f"fetch_fallback={reader_metadata.get('fallback_used')}"
         )
+    print(f"Citation count: {citation_validation['citation_count']}")
+    print(f"Grounded citation count: {citation_validation['grounded_citation_count']}")
+    print(f"Citation validation passed: {citation_validation['passed']}")
     print()
     print(final_report.markdown)
     print()

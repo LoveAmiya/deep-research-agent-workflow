@@ -28,15 +28,20 @@ class ReaderAgent(BaseAgent):
             "fetch_success_count": 0,
             "fetch_failure_count": 0,
             "fallback_used": False,
+            "grounded_findings_count": 0,
+            "citation_count": 0,
         }
         fetch_tool = context.inputs.get("fetch_tool")
+        citation_registry = context.inputs.get("citation_registry")
         if fetch_tool is not None:
             metadata["used_fetch"] = True
 
         findings: List[Finding] = []
         for index, result in enumerate(results, start=1):
             page_content = self._fetch_page(fetch_tool, result, metadata)
-            findings.append(self._finding_from_result(index, result, page_content))
+            finding = self._finding_from_result(index, result, page_content)
+            self._ground_finding(finding, result, page_content, citation_registry, metadata)
+            findings.append(finding)
         findings = compress_findings(findings)
         metadata["finding_count"] = len(findings)
         self._write_memory(context, findings, metadata)
@@ -83,7 +88,39 @@ class ReaderAgent(BaseAgent):
             evidence=evidence,
             source_url=result.url,
             finding_id=f"finding-{index}",
+            source_title=(page_content.title if page_content else result.title),
         )
+
+    @staticmethod
+    def _ground_finding(
+        finding: Finding,
+        result: SearchResult,
+        page_content: PageContent | None,
+        citation_registry,
+        metadata: dict,
+    ) -> None:
+        if citation_registry is None:
+            return
+        source_title = page_content.title if page_content and page_content.title else result.title
+        evidence_text = finding.evidence
+        evidence = citation_registry.add_evidence(
+            source_url=finding.source_url,
+            text=evidence_text,
+            source_title=source_title,
+            metadata={"finding_id": finding.finding_id},
+        )
+        citation = citation_registry.add_citation(
+            source_url=finding.source_url,
+            evidence_id=evidence.evidence_id,
+            source_title=source_title,
+            quote=evidence_text[:240],
+            metadata={"finding_id": finding.finding_id},
+        )
+        finding.evidence_id = evidence.evidence_id
+        finding.citation_id = citation.citation_id
+        finding.source_title = source_title
+        metadata["grounded_findings_count"] += 1
+        metadata["citation_count"] = len(citation_registry.list_citations())
 
     @staticmethod
     def _summarize_snippet(snippet: str) -> str:

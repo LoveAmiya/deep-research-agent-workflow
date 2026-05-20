@@ -10,6 +10,7 @@ from core.schema import ResearchQuestion
 from memory.store import SharedMemory
 from orchestrator.dag import TaskGraph, TaskNode
 from orchestrator.executor import DAGExecutor
+from tools.citation_tool import CitationRegistry, CitationValidator
 
 
 def build_minimal_research_graph() -> TaskGraph:
@@ -72,7 +73,13 @@ def build_minimal_research_graph() -> TaskGraph:
     return graph
 
 
-def run_research_pipeline(question_text: str, llm_client=None, search_tool=None, fetch_tool=None) -> dict:
+def run_research_pipeline(
+    question_text: str,
+    llm_client=None,
+    search_tool=None,
+    fetch_tool=None,
+    citation_registry=None,
+) -> dict:
     question = ResearchQuestion(question=question_text)
     planner = PlannerAgent()
     searcher = SearcherAgent()
@@ -82,6 +89,8 @@ def run_research_pipeline(question_text: str, llm_client=None, search_tool=None,
     red = RedAgent()
     blue = BlueAgent()
     memory = SharedMemory()
+    if citation_registry is None:
+        citation_registry = CitationRegistry()
 
     graph = build_minimal_research_graph()
     handlers = {
@@ -106,7 +115,11 @@ def run_research_pipeline(question_text: str, llm_client=None, search_tool=None,
         "reader_task": lambda outputs, node: reader.run(
             AgentContext(
                 task_id=node.task_id,
-                inputs={"search_results": outputs["search_task"].output, "fetch_tool": fetch_tool},
+                inputs={
+                    "search_results": outputs["search_task"].output,
+                    "fetch_tool": fetch_tool,
+                    "citation_registry": citation_registry,
+                },
                 metadata={"agent_name": reader.name},
                 memory=memory,
                 llm_client=llm_client,
@@ -119,6 +132,7 @@ def run_research_pipeline(question_text: str, llm_client=None, search_tool=None,
                     "question": question,
                     "plan": outputs["planner_task"].output,
                     "findings": outputs["reader_task"].output,
+                    "citation_registry": citation_registry,
                 },
                 metadata={"agent_name": writer.name},
                 memory=memory,
@@ -131,6 +145,7 @@ def run_research_pipeline(question_text: str, llm_client=None, search_tool=None,
                 inputs={
                     "report": outputs["writer_task"].output,
                     "findings": outputs["reader_task"].output,
+                    "citation_registry": citation_registry,
                 },
                 metadata={"agent_name": critic.name},
                 memory=memory,
@@ -144,6 +159,7 @@ def run_research_pipeline(question_text: str, llm_client=None, search_tool=None,
                     "report": outputs["writer_task"].output,
                     "findings": outputs["reader_task"].output,
                     "critic_review": outputs["critic_task"].output,
+                    "citation_registry": citation_registry,
                 },
                 metadata={"agent_name": red.name},
                 memory=memory,
@@ -157,6 +173,7 @@ def run_research_pipeline(question_text: str, llm_client=None, search_tool=None,
                     "report": outputs["writer_task"].output,
                     "red_review": outputs["red_review_task"].output,
                     "findings": outputs["reader_task"].output,
+                    "citation_registry": citation_registry,
                 },
                 metadata={"agent_name": blue.name},
                 memory=memory,
@@ -167,6 +184,10 @@ def run_research_pipeline(question_text: str, llm_client=None, search_tool=None,
     execution = DAGExecutor(graph=graph, handlers=handlers).execute()
     outputs = execution.outputs
     blue_revision = outputs["blue_revision_task"].output
+    citation_validation = CitationValidator().validate_report_citations(
+        blue_revision.revised_report,
+        citation_registry,
+    )
     return {
         "question": question,
         "report": blue_revision.revised_report,
@@ -177,6 +198,8 @@ def run_research_pipeline(question_text: str, llm_client=None, search_tool=None,
         "blue_revision": blue_revision,
         "memory_items": memory.to_dict_list(),
         "memory": memory,
+        "citation_registry": citation_registry,
+        "citation_validation": citation_validation,
         "traces": execution.traces,
         "success": execution.success,
         "execution": execution,

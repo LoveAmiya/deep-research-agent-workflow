@@ -4,6 +4,7 @@ from typing import Any, Dict, List
 
 from evaluation.metrics import (
     citation_coverage,
+    citation_grounding_score,
     finding_coverage,
     keyword_coverage,
     memory_completeness,
@@ -30,10 +31,12 @@ def run_case(case: Dict[str, Any]) -> Dict[str, Any]:
     findings = pipeline_result["findings"]
     red_review = pipeline_result["red_review"]
     blue_revision = pipeline_result["blue_revision"]
+    citation_validation = pipeline_result["citation_validation"]
     memory_items = pipeline_result["memory_items"]
     metrics = {
         "section_coverage": section_coverage(report, case.get("expected_sections", [])),
         "citation_coverage": citation_coverage(report, case.get("expected_min_citations", 0)),
+        "citation_grounding_score": citation_grounding_score(report, citation_validation),
         "finding_coverage": finding_coverage(findings, case.get("expected_min_findings", 0)),
         "keyword_coverage": keyword_coverage(report, case.get("keywords", [])),
         "red_blue_improvement": red_blue_improvement(red_review, blue_revision),
@@ -85,6 +88,7 @@ def main() -> None:
             f"{result['case_id']}: "
             f"section={metrics.get('section_coverage', 0.0):.2f}, "
             f"citation={metrics.get('citation_coverage', 0.0):.2f}, "
+            f"grounding={metrics.get('citation_grounding_score', 0.0):.2f}, "
             f"finding={metrics.get('finding_coverage', 0.0):.2f}, "
             f"keyword={metrics.get('keyword_coverage', 0.0):.2f}, "
             f"red_blue={metrics.get('red_blue_improvement', 0.0):.2f}, "

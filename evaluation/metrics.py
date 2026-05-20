@@ -26,6 +26,16 @@ def citation_coverage(report, min_citations: int) -> float:
     return min(1.0, len(report.citations) / min_citations)
 
 
+def citation_grounding_score(report, citation_validation: Dict[str, Any]) -> float:
+    if citation_validation.get("passed", False):
+        return 1.0
+    citation_count = citation_validation.get("citation_count", len(getattr(report, "citations", [])))
+    if citation_count == 0:
+        return 0.0
+    grounded_count = citation_validation.get("grounded_citation_count", 0)
+    return min(1.0, grounded_count / citation_count)
+
+
 def finding_coverage(findings: list, min_findings: int) -> float:
     if min_findings <= 0:
         return 1.0
@@ -65,6 +75,7 @@ def summarize_eval_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
             "failed_cases": 0,
             "average_section_coverage": 0.0,
             "average_citation_coverage": 0.0,
+            "average_citation_grounding_score": 0.0,
             "average_finding_coverage": 0.0,
             "average_keyword_coverage": 0.0,
             "average_red_blue_improvement": 0.0,
@@ -77,6 +88,7 @@ def summarize_eval_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         "failed_cases": failed_cases,
         "average_section_coverage": _average(results, "section_coverage"),
         "average_citation_coverage": _average(results, "citation_coverage"),
+        "average_citation_grounding_score": _average(results, "citation_grounding_score"),
         "average_finding_coverage": _average(results, "finding_coverage"),
         "average_keyword_coverage": _average(results, "keyword_coverage"),
         "average_red_blue_improvement": _average(results, "red_blue_improvement"),

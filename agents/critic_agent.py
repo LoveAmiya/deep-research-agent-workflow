@@ -2,6 +2,7 @@ from agents.base_agent import AgentContext, AgentResult, BaseAgent
 from core.llm_client import LLMMessage
 from core.prompt_loader import load_prompt
 from core.schema import ResearchReport
+from tools.citation_tool import CitationValidator
 
 
 class CriticAgent(BaseAgent):
@@ -27,6 +28,7 @@ class CriticAgent(BaseAgent):
             )
 
         markdown = report.markdown or ""
+        citation_registry = context.inputs.get("citation_registry")
         checks = {
             "has_title": markdown.startswith("# "),
             "has_key_findings": "## Key Findings" in markdown,
@@ -42,6 +44,13 @@ class CriticAgent(BaseAgent):
             issues.append("Report is missing the References section.")
         if checks["citation_count"] == 0:
             issues.append("Report does not contain any citations.")
+
+        if citation_registry is not None:
+            citation_validation = CitationValidator().validate_report_citations(report, citation_registry)
+            checks["citation_markers_present"] = "[C" in markdown
+            checks["references_grounded"] = citation_validation["passed"]
+            checks["grounded_citation_count"] = citation_validation["grounded_citation_count"]
+            issues.extend(citation_validation["issues"])
 
         review = {
             "passed": len(issues) == 0,

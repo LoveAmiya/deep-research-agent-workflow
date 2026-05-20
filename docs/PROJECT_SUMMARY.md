@@ -2,7 +2,7 @@
 
 ## One-Sentence Summary
 
-DeepResearchAgent is a deterministic-by-default multi-agent research workflow prototype with optional LLM assistance, optional web search/fetch, DAG orchestration, shared memory, rule-based review/revision, and local evaluation.
+DeepResearchAgent is a deterministic-by-default multi-agent research workflow prototype with optional LLM assistance, optional web search/fetch, citation grounding, DAG orchestration, shared memory, rule-based review/revision, and local evaluation.
 
 ## Tech Stack
 
@@ -21,6 +21,7 @@ DeepResearchAgent is a deterministic-by-default multi-agent research workflow pr
 - `orchestrator/`: DAG nodes, graph validation, sequential executor, trace recording, and pipeline runner
 - `memory/`: in-memory shared memory store and simple finding truncation helper
 - `tools/`: mock and optional web search/fetch tools
+- `tools/citation_tool.py`: in-memory evidence/citation registry and validator
 - `evaluation/`: JSONL cases, rule metrics, and eval runner
 - `tests/`: coverage for schema, agents, DAG, memory, Red/Blue review, and evaluation
 
@@ -51,11 +52,12 @@ ResearchQuestion
 - mock search pipeline that keeps runs reproducible and dependency-free
 - optional prompt system and LLM client with deterministic fallback
 - optional SearchTool and FetchTool integration with deterministic fallback
+- evidence spans, citation IDs, `[C#]` report markers, and rule-based citation validation
 
 ## Current Boundaries
 
 - web search and fetch are optional lightweight integrations, not production-grade retrieval
-- no complete evidence grounding or citation verification
+- citation grounding is rule-based and does not perform semantic fact verification
 - no async or concurrent DAG execution
 - no vector database or embeddings
 - no long-term memory

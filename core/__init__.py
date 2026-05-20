@@ -13,7 +13,10 @@ from .llm_client import (
 from .prompt_loader import load_prompt
 from .schema import (
     BlueRevisionResult,
+    Citation,
+    EvidenceSpan,
     Finding,
+    GroundedFinding,
     PageContent,
     RedReviewResult,
     ResearchPlan,
@@ -27,7 +30,10 @@ from .schema import (
 __all__ = [
     "BaseLLMClient",
     "BlueRevisionResult",
+    "Citation",
+    "EvidenceSpan",
     "Finding",
+    "GroundedFinding",
     "LLMClientError",
     "LLMConfig",
     "LLMMessage",

@@ -37,7 +37,8 @@ class BlueAgent(BaseAgent):
                 metadata={"role": self.role, "handoff": "red_review -> blue_revision"},
             )
 
-        revised_report = self._revise_report(report, findings)
+        citation_registry = context.inputs.get("citation_registry")
+        revised_report = self._revise_report(report, findings, citation_registry)
         fixed_issue_ids = []
         remaining_issue_ids = []
         revision_notes = []
@@ -91,10 +92,19 @@ class BlueAgent(BaseAgent):
             metadata=metadata,
         )
 
-    def _revise_report(self, report: ResearchReport, findings: List[Finding]) -> ResearchReport:
+    def _revise_report(
+        self,
+        report: ResearchReport,
+        findings: List[Finding],
+        citation_registry=None,
+    ) -> ResearchReport:
         sections = list(report.sections)
         section_titles = [section["title"] for section in sections]
-        citations = list(report.citations) if report.citations else self._collect_citations(findings)
+        citations = (
+            self._collect_citation_ids(findings)
+            if citation_registry is not None
+            else list(report.citations) if report.citations else self._collect_citations(findings)
+        )
         revision_notes = []
 
         if "Background" not in section_titles:
@@ -112,7 +122,8 @@ class BlueAgent(BaseAgent):
                 {
                     "title": "Key Findings",
                     "content": "\n".join(
-                        f"- {finding.claim} ([source]({finding.source_url}))" for finding in findings
+                        f"- {finding.claim}{self._citation_suffix(finding, citation_registry is not None)}"
+                        for finding in findings
                     ),
                 }
             )
@@ -131,12 +142,15 @@ class BlueAgent(BaseAgent):
             sections.append(
                 {
                     "title": "References",
-                    "content": "\n".join(f"- {citation}" for citation in citations),
+                    "content": self._references_content(citations, citation_registry),
                 }
             )
             revision_notes.append("Added missing References section.")
+        else:
+            sections = self._replace_references_if_registry_available(sections, citations, citation_registry)
 
-        markdown = self._build_markdown(report, sections, citations)
+        markdown = self._build_markdown(report, sections, citations, citation_registry)
+        markdown = self._ensure_key_finding_markers(markdown, findings)
         return replace(
             report,
             sections=sections,
@@ -155,14 +169,78 @@ class BlueAgent(BaseAgent):
         return citations
 
     @staticmethod
-    def _build_markdown(report: ResearchReport, sections: List[dict], citations: List[str]) -> str:
+    def _collect_citation_ids(findings: List[Finding]) -> List[str]:
+        citations: List[str] = []
+        for finding in findings:
+            if finding.citation_id and finding.citation_id not in citations:
+                citations.append(finding.citation_id)
+        return citations
+
+    @staticmethod
+    def _citation_suffix(finding: Finding, use_citation_markers: bool) -> str:
+        if use_citation_markers and finding.citation_id:
+            return f" [{finding.citation_id}]"
+        return f" ([source]({finding.source_url}))"
+
+    @staticmethod
+    def _references_content(citations: List[str], citation_registry=None) -> str:
+        if citation_registry is not None:
+            references = citation_registry.to_references_markdown()
+            if references:
+                return references
+        return "\n".join(f"- {citation}" for citation in citations)
+
+    @classmethod
+    def _replace_references_if_registry_available(
+        cls,
+        sections: List[dict],
+        citations: List[str],
+        citation_registry=None,
+    ) -> List[dict]:
+        if citation_registry is None:
+            return sections
+        updated_sections = []
+        for section in sections:
+            if section["title"] == "References":
+                updated_sections.append(
+                    {"title": "References", "content": cls._references_content(citations, citation_registry)}
+                )
+            else:
+                updated_sections.append(section)
+        return updated_sections
+
+    @staticmethod
+    def _build_markdown(
+        report: ResearchReport,
+        sections: List[dict],
+        citations: List[str],
+        citation_registry=None,
+    ) -> str:
         lines = [f"# {report.title}", "", f"Question: {report.question}", ""]
         for section in sections:
             lines.extend([f"## {section['title']}", "", section["content"], ""])
         if "## References" not in "\n".join(lines):
             lines.extend(["## References", ""])
-            lines.extend([f"- {citation}" for citation in citations])
+            references = BlueAgent._references_content(citations, citation_registry)
+            if references:
+                lines.extend(references.splitlines())
         return "\n".join(lines).strip()
+
+    @staticmethod
+    def _ensure_key_finding_markers(markdown: str, findings: List[Finding]) -> str:
+        updated = markdown
+        for finding in findings:
+            if not finding.citation_id:
+                continue
+            marker = f"[{finding.citation_id}]"
+            if marker in updated:
+                continue
+            source_link = f"([source]({finding.source_url}))"
+            if source_link in updated:
+                updated = updated.replace(source_link, marker, 1)
+            elif finding.claim in updated:
+                updated = updated.replace(finding.claim, f"{finding.claim} {marker}", 1)
+        return updated
 
     @staticmethod
     def _issue_resolved(message: str, report: ResearchReport) -> bool:

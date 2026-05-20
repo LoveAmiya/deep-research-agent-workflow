@@ -2,6 +2,7 @@ from agents.base_agent import AgentContext, AgentResult, BaseAgent
 from core.llm_client import LLMMessage
 from core.prompt_loader import load_prompt
 from core.schema import Finding, RedReviewResult, ResearchReport, ReviewIssue
+from tools.citation_tool import CitationValidator
 
 
 class RedAgent(BaseAgent):
@@ -29,6 +30,7 @@ class RedAgent(BaseAgent):
 
         issues = []
         markdown = report.markdown or ""
+        citation_registry = context.inputs.get("citation_registry")
         issue_index = 1
 
         for section in ["Background", "Key Findings", "Conclusion", "References"]:
@@ -89,6 +91,7 @@ class RedAgent(BaseAgent):
             bullet_count = key_findings_section.count("\n- ") + (
                 1 if key_findings_section.startswith("- ") else 0
             )
+            citation_marker_count = key_findings_section.count("[C")
             if bullet_count < len(findings):
                 issues.append(
                     ReviewIssue(
@@ -98,6 +101,33 @@ class RedAgent(BaseAgent):
                         message="Key Findings appears to summarize fewer items than the findings list.",
                         evidence=f"key_findings_bullets={bullet_count}, findings={len(findings)}",
                         suggestion="Expand Key Findings to reflect the available findings.",
+                    )
+                )
+                issue_index += 1
+            if citation_registry is not None and citation_marker_count < bullet_count:
+                issues.append(
+                    ReviewIssue(
+                        issue_id=f"red-{issue_index}",
+                        category="citation",
+                        severity="medium",
+                        message="One or more Key Findings bullets are missing citation markers.",
+                        evidence=f"citation_markers={citation_marker_count}, bullets={bullet_count}",
+                        suggestion="Add [C#] citation markers to each grounded finding.",
+                    )
+                )
+                issue_index += 1
+
+        if citation_registry is not None:
+            validation = CitationValidator().validate_report_citations(report, citation_registry)
+            for validation_issue in validation["issues"]:
+                issues.append(
+                    ReviewIssue(
+                        issue_id=f"red-{issue_index}",
+                        category="citation" if "citation" in validation_issue.lower() else "evidence",
+                        severity="high",
+                        message=validation_issue,
+                        evidence=", ".join(validation.get("missing_citations", [])) or None,
+                        suggestion="Regenerate citation markers and References from CitationRegistry.",
                     )
                 )
                 issue_index += 1

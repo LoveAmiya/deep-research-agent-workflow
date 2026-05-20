@@ -37,6 +37,8 @@ class WriterAgent(BaseAgent):
             )
 
         references = self._unique_references(findings)
+        citation_registry = context.inputs.get("citation_registry")
+        citation_ids = self._citation_ids(findings)
         metadata = {
             "role": self.role,
             "handoff": "findings -> report",
@@ -45,7 +47,12 @@ class WriterAgent(BaseAgent):
             "used_llm": False,
             "llm_error": None,
             "fallback_used": False,
+            "citation_markers_added": 0,
+            "references_generated_from_registry": False,
         }
+        if citation_registry is not None and citation_ids:
+            references = citation_ids
+            metadata["citation_count"] = len(references)
         markdown = None
         if context.llm_client is not None:
             try:
@@ -60,7 +67,13 @@ class WriterAgent(BaseAgent):
                     ]
                 )
                 candidate = response.content.strip()
-                if all(reference in candidate for reference in references) and "## References" in candidate:
+                required_markers = [f"[{citation_id}]" for citation_id in citation_ids]
+                has_required_citations = (
+                    all(reference in candidate for reference in references)
+                    if not citation_ids
+                    else all(marker in candidate for marker in required_markers)
+                )
+                if has_required_citations and "## References" in candidate:
                     markdown = candidate
                     metadata["used_llm"] = True
                 else:
@@ -71,11 +84,15 @@ class WriterAgent(BaseAgent):
                 metadata["llm_error"] = str(exc)
                 metadata["fallback_used"] = True
 
-        sections = self._build_sections(question, findings)
+        sections = self._build_sections(question, findings, use_citation_markers=citation_registry is not None)
         if markdown is None:
-            markdown = self._build_markdown(question, sections, references)
+            markdown = self._build_markdown(question, sections, references, citation_registry)
             if context.llm_client is not None:
                 metadata["fallback_used"] = True
+        if citation_registry is not None:
+            markdown, added_count = self._ensure_citation_markers(markdown, findings)
+            metadata["citation_markers_added"] = added_count
+            metadata["references_generated_from_registry"] = True
         report = ResearchReport(
             title=f"Research Report: {question.question}",
             question=question.question,
@@ -96,13 +113,18 @@ class WriterAgent(BaseAgent):
         )
 
     @staticmethod
-    def _build_sections(question: ResearchQuestion, findings: List[Finding]) -> List[dict]:
+    def _build_sections(
+        question: ResearchQuestion,
+        findings: List[Finding],
+        use_citation_markers: bool = False,
+    ) -> List[dict]:
         background = (
             f"This mock research report examines the question: {question.question}. "
             "The current pipeline is deterministic and uses placeholder evidence rather than real web or model calls."
         )
         key_findings_lines = [
-            f"- {finding.claim} ([source]({finding.source_url}))" for finding in findings
+            f"- {finding.claim}{WriterAgent._citation_suffix(finding, use_citation_markers)}"
+            for finding in findings
         ]
         conclusion = (
             f"Based on the mock evidence, {question.question.lower()} is shaped by recurring factors such as "
@@ -123,17 +145,53 @@ class WriterAgent(BaseAgent):
         return unique_refs
 
     @staticmethod
+    def _citation_ids(findings: List[Finding]) -> List[str]:
+        citation_ids: List[str] = []
+        for finding in findings:
+            if finding.citation_id and finding.citation_id not in citation_ids:
+                citation_ids.append(finding.citation_id)
+        return citation_ids
+
+    @staticmethod
     def _build_markdown(
         question: ResearchQuestion,
         sections: List[dict],
         references: List[str],
+        citation_registry=None,
     ) -> str:
         lines = [f"# Research Report: {question.question}", "", f"Question: {question.question}", ""]
         for section in sections:
             lines.extend([f"## {section['title']}", "", section["content"], ""])
         lines.extend(["## References", ""])
-        lines.extend([f"- {reference}" for reference in references])
+        if citation_registry is not None:
+            references_markdown = citation_registry.to_references_markdown()
+            if references_markdown:
+                lines.extend(references_markdown.splitlines())
+        else:
+            lines.extend([f"- {reference}" for reference in references])
         return "\n".join(lines).strip()
+
+    @staticmethod
+    def _citation_suffix(finding: Finding, use_citation_markers: bool) -> str:
+        if use_citation_markers and finding.citation_id:
+            return f" [{finding.citation_id}]"
+        return f" ([source]({finding.source_url}))"
+
+    @staticmethod
+    def _ensure_citation_markers(markdown: str, findings: List[Finding]) -> tuple[str, int]:
+        updated_markdown = markdown
+        added_count = 0
+        for finding in findings:
+            if not finding.citation_id:
+                continue
+            marker = f"[{finding.citation_id}]"
+            if marker in updated_markdown:
+                continue
+            source_link = f"([source]({finding.source_url}))"
+            if source_link in updated_markdown:
+                updated_markdown = updated_markdown.replace(source_link, marker, 1)
+                added_count += 1
+        return updated_markdown, added_count
 
     @staticmethod
     def _build_writer_user_message(

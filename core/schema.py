@@ -71,10 +71,45 @@ class Finding:
     confidence: float = 1.0
     finding_id: str = ""
     summary: str = ""
+    evidence_id: Optional[str] = None
+    citation_id: Optional[str] = None
+    source_title: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.summary:
             self.summary = self.claim
+
+
+@dataclass
+class EvidenceSpan:
+    evidence_id: str
+    source_url: str
+    source_title: Optional[str]
+    text: str
+    start_char: Optional[int] = None
+    end_char: Optional[int] = None
+    metadata: Dict[str, object] = field(default_factory=dict)
+
+
+@dataclass
+class Citation:
+    citation_id: str
+    source_url: str
+    source_title: Optional[str]
+    evidence_id: Optional[str]
+    quote: Optional[str] = None
+    metadata: Dict[str, object] = field(default_factory=dict)
+
+
+@dataclass
+class GroundedFinding:
+    claim: str
+    evidence: str
+    source_url: str
+    confidence: float = 1.0
+    evidence_id: Optional[str] = None
+    citation_id: Optional[str] = None
+    source_title: Optional[str] = None
 
 
 @dataclass

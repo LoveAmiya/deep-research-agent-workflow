@@ -84,8 +84,17 @@ This document defines the staged implementation plan for DeepResearchAgent.
 - Add optional DuckDuckGo HTML search using Python standard library
 - Add optional simple webpage fetching and text extraction using Python standard library
 - Let SearcherAgent and ReaderAgent fall back safely when real search/fetch fails
+- Status: completed
+
+## Phase 11: Evidence Grounding and Citation
+
+- Add `EvidenceSpan`, `Citation`, and `GroundedFinding` data structures
+- Add in-memory `CitationRegistry` and rule-based `CitationValidator`
+- Let ReaderAgent create evidence/citation IDs for findings
+- Let WriterAgent generate `[C1]` citation markers and registry-backed References
+- Extend Critic/Red/Blue and evaluation with citation grounding checks
 - Status: current phase
 
 ## Current Implementation Boundary
 
-The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM and optional standard-library web search/fetch when configured, but it does not perform production-grade evidence grounding, concurrent DAG execution, vector retrieval, LLM-as-Judge, or complex benchmark evaluation.
+The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM and optional standard-library web search/fetch when configured. Citation grounding is rule-based through local evidence/citation IDs; the project does not perform semantic fact verification, concurrent DAG execution, vector retrieval, LLM-as-Judge, or complex benchmark evaluation.
