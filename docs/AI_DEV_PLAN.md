@@ -111,8 +111,16 @@ This document defines the staged implementation plan for DeepResearchAgent.
 - Stop on Red pass, max rounds, no improvement, repeated issue signatures, or agent failure
 - Keep single-round Red/Blue behavior as the default path
 - Add optional evaluation metric for iterative Red/Blue score
+- Status: completed
+
+## Phase 14: Persistent Run Store
+
+- Add SQLite-based run-level persistence
+- Save complete pipeline results, report markdown, traces, memory items, reviews, and citation validation
+- Support loading runs, listing recent runs, and exporting summaries
+- Keep persistence disabled by default
 - Status: current phase
 
 ## Current Implementation Boundary
 
-The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM, optional standard-library web search/fetch, optional local asyncio DAG execution, and optional bounded iterative Red/Blue review when configured. Citation grounding is rule-based through local evidence/citation IDs; the project does not perform semantic fact verification, distributed execution, checkpoint/resume, vector retrieval, LLM-as-Judge, complex scoring, or complex benchmark evaluation.
+The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM, optional standard-library web search/fetch, optional local asyncio DAG execution, optional bounded iterative Red/Blue review, and optional SQLite run persistence when configured. Citation grounding is rule-based through local evidence/citation IDs; the project does not perform semantic fact verification, distributed execution, checkpoint/resume, vector retrieval, embeddings, LLM-as-Judge, complex scoring, or complex benchmark evaluation.

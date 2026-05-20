@@ -2,7 +2,7 @@
 
 ## One-Sentence Summary
 
-DeepResearchAgent is a deterministic-by-default multi-agent research workflow prototype with optional LLM assistance, optional web search/fetch, citation grounding, sync/async DAG orchestration, shared memory, bounded rule-based Red/Blue review/revision, and local evaluation.
+DeepResearchAgent is a deterministic-by-default multi-agent research workflow prototype with optional LLM assistance, optional web search/fetch, citation grounding, sync/async DAG orchestration, shared memory, bounded rule-based Red/Blue review/revision, SQLite run persistence, and local evaluation.
 
 ## Tech Stack
 
@@ -21,6 +21,7 @@ DeepResearchAgent is a deterministic-by-default multi-agent research workflow pr
 - `agents/red_blue_loop.py`: optional bounded iterative Red/Blue runner
 - `orchestrator/`: DAG nodes, graph validation, sync/async executors, trace recording, and pipeline runner
 - `memory/`: in-memory shared memory store and simple finding truncation helper
+- `memory/persistent_store.py`: optional SQLite run-level persistence
 - `tools/`: mock and optional web search/fetch tools
 - `tools/citation_tool.py`: in-memory evidence/citation registry and validator
 - `evaluation/`: JSONL cases, rule metrics, and eval runner
@@ -56,6 +57,7 @@ ResearchQuestion
 - optional prompt system and LLM client with deterministic fallback
 - optional SearchTool and FetchTool integration with deterministic fallback
 - evidence spans, citation IDs, `[C#]` report markers, and rule-based citation validation
+- optional SQLite run store for saving, loading, listing, and summarizing completed runs
 
 ## Current Boundaries
 
@@ -64,6 +66,7 @@ ResearchQuestion
 - async DAG execution is local asyncio scheduling, not distributed execution
 - no vector database or embeddings
 - no long-term memory
+- no checkpoint/resume
 - no LLM-as-Judge
 - no complex scoring or adversarial training
 - no complex benchmark framework

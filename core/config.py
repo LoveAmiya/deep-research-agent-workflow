@@ -45,6 +45,12 @@ class RedBlueLoopExecutionConfig:
     enable_oscillation_detection: bool = True
 
 
+@dataclass
+class RunStoreConfig:
+    enabled: bool = False
+    db_path: str = "runs/deep_research_runs.sqlite3"
+
+
 def _load_dotenv_file(path: str = ".env") -> None:
     dotenv_path = Path(path)
     if not dotenv_path.exists() or not dotenv_path.is_file():
@@ -142,4 +148,12 @@ def load_red_blue_loop_config_from_env(load_dotenv: bool = False) -> RedBlueLoop
             2,
         ),
         enable_oscillation_detection=oscillation_raw.strip().lower() not in {"0", "false"},
+    )
+
+
+def load_run_store_config_from_env(load_dotenv: bool = False) -> RunStoreConfig:
+    _maybe_load_dotenv(load_dotenv)
+    return RunStoreConfig(
+        enabled=_parse_bool_env("DEEP_RESEARCH_SAVE_RUN"),
+        db_path=os.getenv("DEEP_RESEARCH_RUN_STORE_PATH", "runs/deep_research_runs.sqlite3"),
     )

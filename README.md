@@ -6,7 +6,7 @@ The current implementation is a deterministic local prototype by default. Search
 
 ## Current Status
 
-The repository is currently at Phase 13: Iterative Red-Blue Loop.
+The repository is currently at Phase 14: Persistent Run Store.
 
 Implemented capabilities:
 
@@ -25,6 +25,7 @@ Implemented capabilities:
 - lightweight evidence spans, citation IDs, citation markers, and citation validation
 - optional asyncio DAG executor with max concurrency, timeout, and async traces
 - optional iterative rule-based Red/Blue review loop with bounded convergence checks
+- optional SQLite run-level persistence for debugging and replay
 
 This phase does not include semantic evidence verification, distributed execution, checkpoint/resume, vector memory, LLM-as-judge, Bootstrap CI, Cohen's d, or external benchmark downloads.
 
@@ -114,6 +115,18 @@ set DEEP_RESEARCH_RED_BLUE_OSCILLATION_DETECTION=true
 
 The loop stops on Red pass, max rounds, no improvement, repeated remaining issue signatures, or agent failure.
 
+## Optional Run Persistence
+
+By default runs are not saved. To persist completed pipeline outputs to SQLite:
+
+```powershell
+$env:DEEP_RESEARCH_SAVE_RUN="1"
+$env:DEEP_RESEARCH_RUN_STORE_PATH="runs/deep_research_runs.sqlite3"
+python main.py
+```
+
+This stores run-level artifacts for debugging. It is not vector memory, embedding retrieval, checkpoint/resume, or long-term user memory.
+
 ## Run Evaluation
 
 ```bash
@@ -131,6 +144,7 @@ This runs local ResearchBench-mini style JSONL cases and prints rule metric aver
 - no LLM-as-Judge
 - no complex ResearchBench implementation
 - Red/Blue review is deterministic; iterative mode is bounded and rule-based
+- SQLite persistence is run-level storage, not semantic long-term memory
 
 ## Planned Roadmap
 
@@ -148,5 +162,6 @@ This runs local ResearchBench-mini style JSONL cases and prints rule metric aver
 - Phase 11: Evidence grounding and citation validation
 - Phase 12: Optional async DAG executor
 - Phase 13: Optional iterative Red-Blue loop
+- Phase 14: Optional SQLite persistent run store
 
 Future work can add semantic evidence verification, better source parsing, persistent memory, richer LLM-backed agents, and stronger evaluation.

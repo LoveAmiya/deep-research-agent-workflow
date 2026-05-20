@@ -4,10 +4,12 @@ from core.config import (
     load_dag_execution_config_from_env,
     load_llm_config_from_env,
     load_red_blue_loop_config_from_env,
+    load_run_store_config_from_env,
     load_search_config_from_env,
 )
 from core.llm_client import MockLLMClient, create_llm_client
 from agents.red_blue_loop import RedBlueLoopConfig
+from memory.persistent_store import SQLiteRunStore
 from orchestrator.async_research_pipeline import async_run_research_pipeline
 from orchestrator.research_pipeline import run_research_pipeline
 from tools.fetch_tool import MockFetchTool, create_fetch_tool
@@ -22,6 +24,7 @@ def build_demo_execution(load_dotenv: bool = False) -> dict:
     search_config = load_search_config_from_env(load_dotenv=load_dotenv)
     dag_config = load_dag_execution_config_from_env(load_dotenv=load_dotenv)
     red_blue_loop_execution_config = load_red_blue_loop_config_from_env(load_dotenv=load_dotenv)
+    run_store_config = load_run_store_config_from_env(load_dotenv=load_dotenv)
     red_blue_loop_config = RedBlueLoopConfig(
         max_rounds=red_blue_loop_execution_config.max_rounds,
         stop_if_no_improvement_rounds=red_blue_loop_execution_config.stop_if_no_improvement_rounds,
@@ -59,6 +62,7 @@ def build_demo_execution(load_dotenv: bool = False) -> dict:
     result["fetch_tool"] = fetch_tool
     result["dag_config"] = dag_config
     result["red_blue_loop_execution_config"] = red_blue_loop_execution_config
+    result["run_store_config"] = run_store_config
     return result
 
 
@@ -87,6 +91,7 @@ def main() -> None:
     fetch_tool = execution["fetch_tool"]
     dag_config = execution["dag_config"]
     red_blue_loop_execution_config = execution["red_blue_loop_execution_config"]
+    run_store_config = execution["run_store_config"]
     red_blue_loop_result = execution.get("red_blue_loop_result")
     dag_outputs = execution["execution"].outputs
     search_metadata = dag_outputs["search_task"].metadata
@@ -120,6 +125,15 @@ def main() -> None:
         print(f"Red-Blue loop stop_reason: {red_blue_loop_result.stop_reason}")
         print(f"Red-Blue loop total_fixed_issues: {red_blue_loop_result.total_fixed_issues}")
         print(f"Red-Blue loop remaining_issue_count: {red_blue_loop_result.remaining_issue_count}")
+    if run_store_config.enabled:
+        try:
+            saved_record = SQLiteRunStore(run_store_config.db_path).save_run_result(execution)
+            print("Run saved: true")
+            print(f"run_id: {saved_record.run_id}")
+            print(f"run_store_path: {run_store_config.db_path}")
+        except Exception as exc:
+            print("Run saved: false")
+            print(f"run_store_error: {exc}")
     print()
     print(final_report.markdown)
     print()
