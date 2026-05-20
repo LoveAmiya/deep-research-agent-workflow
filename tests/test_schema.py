@@ -6,19 +6,25 @@ from core.schema import Finding, ResearchPlan, ResearchQuestion, ResearchReport,
 class TestSchemaInitialization(unittest.TestCase):
     def test_research_question_initialization(self) -> None:
         question = ResearchQuestion(
+            question="What are the risks of synthetic data in evaluation pipelines?",
             question_id="q-001",
             query="What are the risks of synthetic data in evaluation pipelines?",
             context="Focus on model assessment.",
         )
 
         self.assertEqual(question.question_id, "q-001")
+        self.assertEqual(question.question, "What are the risks of synthetic data in evaluation pipelines?")
         self.assertEqual(question.query, "What are the risks of synthetic data in evaluation pipelines?")
         self.assertEqual(question.context, "Focus on model assessment.")
 
     def test_research_plan_initialization(self) -> None:
         plan = ResearchPlan(
+            question="What are the risks of synthetic data in evaluation pipelines?",
             question_id="q-001",
             objective="Investigate evaluation risks.",
+            sub_questions=["define risks", "collect examples", "summarize findings"],
+            search_queries=["synthetic data evaluation risks"],
+            expected_sections=["Background", "Key Findings", "Conclusion"],
             steps=["define risks", "collect examples", "summarize findings"],
         )
 
@@ -40,14 +46,20 @@ class TestSchemaInitialization(unittest.TestCase):
 
     def test_finding_and_report_initialization(self) -> None:
         finding = Finding(
+            claim="Synthetic data can distort benchmark validity.",
+            evidence="distribution shift and label leakage can affect benchmark outcomes.",
+            source_url="https://example.com/source",
             finding_id="f-001",
             summary="Synthetic data can distort benchmark validity.",
-            evidence=["distribution shift", "label leakage"],
-            confidence="medium",
+            confidence=0.7,
         )
         report = ResearchReport(
-            question_id="q-001",
             title="Evaluation Risks Report",
+            question="What are the risks of synthetic data in evaluation pipelines?",
+            sections=[{"title": "Key Findings", "content": "Synthetic data can distort benchmark validity."}],
+            citations=["https://example.com/source"],
+            markdown="# Evaluation Risks Report",
+            question_id="q-001",
             summary="A minimal Phase 0 report object.",
             findings=[finding],
             references=["https://example.com/source"],
