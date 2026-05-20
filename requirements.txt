@@ -1,0 +1,2 @@
+# Phase 0 intentionally keeps dependencies minimal.
+# No external packages are required at this stage.
