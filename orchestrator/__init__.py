@@ -2,7 +2,7 @@
 
 from orchestrator.dag import TaskGraph, TaskNode
 from orchestrator.executor import DAGExecutor, ExecutionResult
-from orchestrator.research_pipeline import build_minimal_research_graph
+from orchestrator.research_pipeline import build_minimal_research_graph, run_research_pipeline
 from orchestrator.state import TaskState
 from orchestrator.trace import TraceEvent, TraceRecorder
 
@@ -15,4 +15,5 @@ __all__ = [
     "TraceEvent",
     "TraceRecorder",
     "build_minimal_research_graph",
+    "run_research_pipeline",
 ]
