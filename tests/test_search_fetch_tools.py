@@ -76,6 +76,18 @@ class TestSearchFetchTools(unittest.TestCase):
         self.assertFalse(config.enabled)
         self.assertEqual(config.provider, "mock")
         self.assertEqual(config.max_results, 5)
+        self.assertEqual(config.provider_order, ["mock"])
+
+    def test_provider_order_does_not_enable_real_search_by_itself(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"DEEP_RESEARCH_SEARCH_PROVIDER_ORDER": "duckduckgo_html,mock"},
+            clear=True,
+        ):
+            config = load_search_config_from_env()
+
+        self.assertFalse(config.enabled)
+        self.assertEqual(config.provider_order, ["mock"])
 
     def test_searcher_uses_mock_search_tool(self) -> None:
         plan = self._plan()

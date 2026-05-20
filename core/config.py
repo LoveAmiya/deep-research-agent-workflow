@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -28,6 +28,11 @@ class SearchConfig:
     max_results: int = 5
     timeout_seconds: float = 15.0
     user_agent: str = DEFAULT_USER_AGENT
+    provider_order: list[str] = field(default_factory=lambda: ["mock"])
+    real_search_enabled: bool = False
+    brave_api_key: Optional[str] = None
+    serpapi_api_key: Optional[str] = None
+    tavily_api_key: Optional[str] = None
 
 
 @dataclass
@@ -94,6 +99,14 @@ def _parse_int_env(name: str, default: int) -> int:
         return default
 
 
+def _parse_csv_env(name: str, default: list[str]) -> list[str]:
+    raw_value = os.getenv(name, "").strip()
+    if not raw_value:
+        return list(default)
+    values = [value.strip() for value in raw_value.split(",") if value.strip()]
+    return values or list(default)
+
+
 def load_llm_config_from_env(load_dotenv: bool = False) -> LLMConfig:
     _maybe_load_dotenv(load_dotenv)
     enabled_raw = os.getenv("DEEP_RESEARCH_USE_LLM", "").strip().lower()
@@ -111,14 +124,26 @@ def load_llm_config_from_env(load_dotenv: bool = False) -> LLMConfig:
 
 def load_search_config_from_env(load_dotenv: bool = False) -> SearchConfig:
     _maybe_load_dotenv(load_dotenv)
-    enabled = _parse_bool_env("DEEP_RESEARCH_USE_WEB_SEARCH")
+    real_search_enabled = _parse_bool_env("DEEP_RESEARCH_ENABLE_REAL_SEARCH")
+    enabled = _parse_bool_env("DEEP_RESEARCH_USE_WEB_SEARCH") or real_search_enabled
     default_provider = "duckduckgo_html" if enabled else "mock"
+    provider = os.getenv("DEEP_RESEARCH_SEARCH_PROVIDER", default_provider)
+    provider_order = (
+        _parse_csv_env("DEEP_RESEARCH_SEARCH_PROVIDER_ORDER", [provider])
+        if enabled
+        else ["mock"]
+    )
     return SearchConfig(
         enabled=enabled,
-        provider=os.getenv("DEEP_RESEARCH_SEARCH_PROVIDER", default_provider),
+        provider=provider,
         max_results=_parse_int_env("DEEP_RESEARCH_SEARCH_MAX_RESULTS", 5),
         timeout_seconds=_parse_float_env("DEEP_RESEARCH_SEARCH_TIMEOUT_SECONDS", 15.0),
         user_agent=os.getenv("DEEP_RESEARCH_USER_AGENT", DEFAULT_USER_AGENT),
+        provider_order=provider_order,
+        real_search_enabled=real_search_enabled or enabled,
+        brave_api_key=os.getenv("DEEP_RESEARCH_BRAVE_API_KEY"),
+        serpapi_api_key=os.getenv("DEEP_RESEARCH_SERPAPI_API_KEY"),
+        tavily_api_key=os.getenv("DEEP_RESEARCH_TAVILY_API_KEY"),
     )
 
 

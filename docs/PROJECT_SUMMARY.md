@@ -2,7 +2,7 @@
 
 ## One-Sentence Summary
 
-DeepResearchAgent is a deterministic-by-default multi-agent research workflow prototype with optional LLM assistance, optional web search/fetch, citation grounding, sync/async DAG orchestration, shared memory, bounded rule-based Red/Blue review/revision, SQLite run persistence, optional LLM-as-Judge mini-evaluation, and local rule evaluation.
+DeepResearchAgent is a deterministic-by-default multi-agent research workflow prototype with optional LLM assistance, provider-based optional web search/fetch, citation grounding, sync/async DAG orchestration, shared memory, bounded rule-based Red/Blue review/revision, SQLite run persistence, optional LLM-as-Judge mini-evaluation, and local rule evaluation.
 
 ## Tech Stack
 
@@ -12,6 +12,7 @@ DeepResearchAgent is a deterministic-by-default multi-agent research workflow pr
 - JSONL evaluation cases
 - optional OpenAI-compatible HTTP LLM client using Python standard library
 - optional DuckDuckGo HTML search and simple webpage fetch using Python standard library
+- provider-based search registry with mock fallback
 - no external runtime dependencies in the current phase
 
 ## Core Modules
@@ -23,6 +24,7 @@ DeepResearchAgent is a deterministic-by-default multi-agent research workflow pr
 - `memory/`: in-memory shared memory store and simple finding truncation helper
 - `memory/persistent_store.py`: optional SQLite run-level persistence
 - `tools/`: mock and optional web search/fetch tools
+- `search/`: search provider abstractions, provider responses, and fallback registry
 - `tools/citation_tool.py`: in-memory evidence/citation registry and validator
 - `evaluation/`: JSONL cases, rule metrics, and eval runner
 - `evaluation/llm_judge.py`: optional LLM-as-Judge mini evaluator
@@ -55,6 +57,7 @@ ResearchQuestion
 - optional iterative Red/Blue loop with convergence and oscillation guards
 - ResearchBench-mini local evaluation with deterministic rule metrics
 - mock search pipeline that keeps runs reproducible and dependency-free
+- provider-based search fallback with mock, DuckDuckGo HTML wrapper, and API-provider skeletons
 - optional prompt system and LLM client with deterministic fallback
 - optional SearchTool and FetchTool integration with deterministic fallback
 - evidence spans, citation IDs, `[C#]` report markers, and rule-based citation validation
@@ -64,6 +67,7 @@ ResearchQuestion
 ## Current Boundaries
 
 - web search and fetch are optional lightweight integrations, not production-grade retrieval
+- provider fallback records trace metadata but does not implement production ranking
 - citation grounding is rule-based and does not perform semantic fact verification
 - async DAG execution is local asyncio scheduling, not distributed execution
 - no vector database or embeddings
@@ -75,7 +79,7 @@ ResearchQuestion
 
 ## Future Extensions
 
-- stronger search provider integration behind `SearcherAgent`
+- robust webpage extraction and source parsing behind the current provider/fetch interfaces
 - LLM-backed planning, reading, writing, and critique behind existing agent interfaces
 - source parsing and citation grounding
 - persistent memory store
@@ -84,4 +88,4 @@ ResearchQuestion
 
 ## Resume-Friendly Description
 
-Built DeepResearchAgent, a Python multi-agent research workflow prototype with role-specific agents, DAG task orchestration, shared in-memory state, optional LLM and web search/fetch integrations, rule-based Red/Blue review, and ResearchBench-mini style local evaluation. Implemented deterministic mock defaults with unit-tested schemas, agent handoffs, memory writes, traceable execution, fallback behavior, and reproducible evaluation metrics.
+Built DeepResearchAgent, a Python multi-agent research workflow prototype with role-specific agents, DAG task orchestration, shared in-memory state, optional LLM and provider-based web search/fetch integrations, rule-based Red/Blue review, and ResearchBench-mini style local evaluation. Implemented deterministic mock defaults with unit-tested schemas, agent handoffs, memory writes, traceable execution, fallback behavior, and reproducible evaluation metrics.

@@ -78,6 +78,9 @@ def run_research_pipeline(
     question_text: str,
     llm_client=None,
     search_tool=None,
+    search_provider_registry=None,
+    search_provider_order=None,
+    real_search_enabled: bool = False,
     fetch_tool=None,
     citation_registry=None,
     use_red_blue_loop: bool = False,
@@ -87,6 +90,9 @@ def run_research_pipeline(
         question_text=question_text,
         llm_client=llm_client,
         search_tool=search_tool,
+        search_provider_registry=search_provider_registry,
+        search_provider_order=search_provider_order,
+        real_search_enabled=real_search_enabled,
         fetch_tool=fetch_tool,
         citation_registry=citation_registry,
     )
@@ -110,6 +116,9 @@ def build_research_pipeline_components(
     question_text: str,
     llm_client=None,
     search_tool=None,
+    search_provider_registry=None,
+    search_provider_order=None,
+    real_search_enabled: bool = False,
     fetch_tool=None,
     citation_registry=None,
 ) -> dict:
@@ -139,10 +148,17 @@ def build_research_pipeline_components(
         "search_task": lambda outputs, node: searcher.run(
             AgentContext(
                 task_id=node.task_id,
-                inputs={"plan": outputs["planner_task"].output, "search_tool": search_tool},
+                inputs={
+                    "plan": outputs["planner_task"].output,
+                    "search_tool": search_tool,
+                    "search_provider_registry": search_provider_registry,
+                    "search_provider_order": search_provider_order,
+                    "real_search_enabled": real_search_enabled,
+                },
                 metadata={"agent_name": searcher.name},
                 memory=memory,
                 llm_client=llm_client,
+                search_provider_registry=search_provider_registry,
             )
         ),
         "reader_task": lambda outputs, node: reader.run(

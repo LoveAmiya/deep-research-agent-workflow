@@ -128,8 +128,18 @@ This document defines the staged implementation plan for DeepResearchAgent.
 - Evaluate answer relevance, factual consistency, citation quality, completeness, and clarity
 - Keep rule metrics as the default evaluation path
 - Use mock/fallback judge behavior in tests
+- Status: completed
+
+## Phase 16: Reliable Search Providers
+
+- Add normalized search provider result and response structures
+- Add provider registry with ordered fallback and trace metadata
+- Keep `MockSearchProvider` as the deterministic default and fallback
+- Wrap Phase 10 DuckDuckGo HTML search behind a provider interface
+- Add optional Brave, SerpAPI, and Tavily provider skeletons that fail safely without keys
+- Let `SearcherAgent` use provider registry when available while preserving old fallback paths
 - Status: current phase
 
 ## Current Implementation Boundary
 
-The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM, optional standard-library web search/fetch, optional local asyncio DAG execution, optional bounded iterative Red/Blue review, optional SQLite run persistence, and optional LLM-as-Judge mini evaluation when configured. Citation grounding is rule-based through local evidence/citation IDs; the project does not perform semantic fact verification, distributed execution, checkpoint/resume, vector retrieval, embeddings, multi-judge voting, statistical significance testing, or complex benchmark evaluation.
+The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM, optional provider-based web search/fetch, optional local asyncio DAG execution, optional bounded iterative Red/Blue review, optional SQLite run persistence, and optional LLM-as-Judge mini evaluation when configured. Citation grounding is rule-based through local evidence/citation IDs; the project does not perform production-grade webpage extraction, semantic fact verification, distributed execution, checkpoint/resume, vector retrieval, embeddings, multi-judge voting, statistical significance testing, or complex benchmark evaluation.

@@ -13,6 +13,7 @@ class AgentContext:
     metadata: Dict[str, Any] = field(default_factory=dict)
     memory: Optional["SharedMemory"] = None
     llm_client: Optional["BaseLLMClient"] = None
+    search_provider_registry: Optional[Any] = None
 
 
 @dataclass

@@ -36,6 +36,17 @@ class SearcherAgent(BaseAgent):
         context: AgentContext,
         metadata: dict,
     ) -> List[SearchResult]:
+        search_provider_registry = context.search_provider_registry or context.inputs.get(
+            "search_provider_registry"
+        )
+        if search_provider_registry is not None:
+            return self._search_with_provider_registry(
+                plan,
+                context,
+                metadata,
+                search_provider_registry,
+            )
+
         search_tool = context.inputs.get("search_tool")
         max_results = int(context.inputs.get("max_results", 5))
         if search_tool is None:
@@ -60,6 +71,73 @@ class SearcherAgent(BaseAgent):
             for query in plan.search_queries:
                 fallback_results.extend(fallback_tool.search(query, max_results=1))
             return fallback_results or self._deterministic_results(plan)
+
+    def _search_with_provider_registry(
+        self,
+        plan: ResearchPlan,
+        context: AgentContext,
+        metadata: dict,
+        search_provider_registry,
+    ) -> List[SearchResult]:
+        max_results = int(context.inputs.get("max_results", 5))
+        provider_order = context.inputs.get("search_provider_order") or ["mock"]
+        real_search_enabled = bool(context.inputs.get("real_search_enabled", False))
+        metadata["real_search_enabled"] = real_search_enabled
+        metadata["search_provider_order"] = list(provider_order)
+
+        results: List[SearchResult] = []
+        attempted_providers: List[str] = []
+        provider_errors: dict = {}
+        selected_provider = None
+        fallback_used = False
+
+        for query in plan.search_queries:
+            response = search_provider_registry.search_with_fallback(
+                query=query,
+                provider_order=provider_order,
+                max_results=max_results,
+            )
+            response_metadata = response.metadata or {}
+            for provider_name in response_metadata.get("attempted_providers", []):
+                if provider_name not in attempted_providers:
+                    attempted_providers.append(provider_name)
+            provider_errors.update(response_metadata.get("provider_errors", {}))
+            fallback_used = fallback_used or bool(response_metadata.get("fallback_used"))
+            selected_provider = selected_provider or response_metadata.get("selected_provider")
+
+            if response.success:
+                for item in response.results:
+                    results.append(
+                        SearchResult(
+                            title=item.title,
+                            url=item.url,
+                            snippet=item.snippet,
+                            source=item.provider,
+                        )
+                    )
+            else:
+                provider_errors[query] = response.error or "search failed"
+
+        if not results:
+            metadata["fallback_used"] = True
+            metadata["search_error"] = "provider registry returned no usable results"
+            fallback_tool = MockSearchTool()
+            for query in plan.search_queries:
+                results.extend(fallback_tool.search(query, max_results=1))
+            selected_provider = "mock"
+            fallback_used = True
+
+        selected_provider = selected_provider or (results[0].source if results else "mock")
+        metadata["search_provider"] = selected_provider
+        metadata["attempted_providers"] = attempted_providers or list(provider_order)
+        metadata["provider_errors"] = provider_errors
+        metadata["fallback_used"] = fallback_used or metadata.get("fallback_used", False)
+        metadata["used_real_search"] = selected_provider != "mock"
+        if provider_errors and metadata["search_error"] is None:
+            metadata["search_error"] = "; ".join(
+                f"{provider}: {error}" for provider, error in provider_errors.items()
+            )
+        return results[:max_results]
 
     def _deterministic_results(self, plan: ResearchPlan) -> List[SearchResult]:
         results: List[SearchResult] = []
@@ -88,6 +166,9 @@ class SearcherAgent(BaseAgent):
             "search_provider": "deterministic_mock",
             "fallback_used": False,
             "search_error": None,
+            "attempted_providers": [],
+            "provider_errors": {},
+            "real_search_enabled": False,
         }
         return metadata
 
