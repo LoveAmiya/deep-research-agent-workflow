@@ -1,4 +1,5 @@
 import json
+import time
 import uuid
 from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import datetime, timezone
@@ -95,7 +96,7 @@ class JSONCheckpointStore(CheckpointStore):
             json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True),
             encoding="utf-8",
         )
-        temporary_path.replace(path)
+        self._replace_with_retry(temporary_path, path)
 
     def load_checkpoint(self, run_id: str) -> Optional[RunCheckpoint]:
         path = self.checkpoint_path(run_id)
@@ -112,6 +113,22 @@ class JSONCheckpointStore(CheckpointStore):
     def checkpoint_path(self, run_id: str) -> Path:
         safe_run_id = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in run_id)
         return self.checkpoint_dir / f"{safe_run_id}.json"
+
+    @staticmethod
+    def _replace_with_retry(
+        temporary_path: Path,
+        target_path: Path,
+        attempts: int = 5,
+        delay_seconds: float = 0.02,
+    ) -> None:
+        for attempt in range(1, attempts + 1):
+            try:
+                temporary_path.replace(target_path)
+                return
+            except PermissionError:
+                if attempt == attempts:
+                    raise
+                time.sleep(delay_seconds * attempt)
 
 
 def run_checkpoint_to_dict(checkpoint: RunCheckpoint) -> dict:

@@ -1,7 +1,7 @@
 import tempfile
 import unittest
 
-from main import build_demo_execution
+from main import _parse_cli_args, build_demo_execution
 from orchestrator.research_pipeline import run_research_pipeline
 
 
@@ -52,6 +52,18 @@ class TestMainResume(unittest.TestCase):
 
         self.assertTrue(execution["success"])
         self.assertIn("checkpoint_metadata", execution)
+
+    def test_parse_cli_args_enables_red_blue_loop(self) -> None:
+        parsed = _parse_cli_args(["--red-blue-loop"])
+
+        self.assertTrue(parsed["red_blue_loop_enabled"])
+        self.assertIsNone(parsed["resume_from_run_id"])
+
+    def test_parse_cli_args_keeps_resume_argument(self) -> None:
+        parsed = _parse_cli_args(["--red-blue-loop", "--resume", "run-1"])
+
+        self.assertTrue(parsed["red_blue_loop_enabled"])
+        self.assertEqual(parsed["resume_from_run_id"], "run-1")
 
 
 if __name__ == "__main__":

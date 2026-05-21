@@ -1,0 +1,761 @@
+{
+  "benchmark_name": "ResearchBench-mini Plus",
+  "metadata": {
+    "judge_enabled": false,
+    "red_blue_enabled": false
+  },
+  "results": [
+    {
+      "case_id": "plus_ai_001",
+      "citation_count_score": 1.0,
+      "citation_grounding_score": 1.0,
+      "composite_score": 1.0,
+      "difficulty": "medium",
+      "domain": "AI / LLM",
+      "evidence_count_score": 1.0,
+      "finding_coverage": 1.0,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 1.0,
+      "metadata": {
+        "expected_citation_count": 3,
+        "expected_evidence_count": 3,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "adoption",
+          "governance"
+        ]
+      },
+      "question": "What organizational factors influence enterprise adoption of open-source LLMs?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: What organizational factors influence enterprise adoption of open-source LLMs?",
+      "rule_score": 1.0,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_ai_002",
+      "citation_count_score": 0.75,
+      "citation_grounding_score": 1.0,
+      "composite_score": 0.8928571428571429,
+      "difficulty": "hard",
+      "domain": "AI / LLM",
+      "evidence_count_score": 0.75,
+      "finding_coverage": 0.75,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 1.0,
+      "metadata": {
+        "expected_citation_count": 4,
+        "expected_evidence_count": 4,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "rag",
+          "fine-tuning"
+        ]
+      },
+      "question": "How should teams compare retrieval-augmented generation and fine-tuning for internal knowledge assistants?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: How should teams compare retrieval-augmented generation and fine-tuning for internal knowledge assistants?",
+      "rule_score": 0.8928571428571429,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_ai_003",
+      "citation_count_score": 1.0,
+      "citation_grounding_score": 1.0,
+      "composite_score": 1.0,
+      "difficulty": "medium",
+      "domain": "AI / LLM",
+      "evidence_count_score": 1.0,
+      "finding_coverage": 1.0,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 1.0,
+      "metadata": {
+        "expected_citation_count": 3,
+        "expected_evidence_count": 3,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "software",
+          "risk"
+        ]
+      },
+      "question": "What risks should organizations consider when deploying AI coding assistants?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: What risks should organizations consider when deploying AI coding assistants?",
+      "rule_score": 1.0,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_health_001",
+      "citation_count_score": 1.0,
+      "citation_grounding_score": 1.0,
+      "composite_score": 0.9642857142857143,
+      "difficulty": "medium",
+      "domain": "Healthcare",
+      "evidence_count_score": 1.0,
+      "finding_coverage": 1.0,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 0.75,
+      "metadata": {
+        "expected_citation_count": 3,
+        "expected_evidence_count": 3,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "operations",
+          "clinical"
+        ]
+      },
+      "question": "What operational factors affect hospital adoption of clinical decision support tools?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: What operational factors affect hospital adoption of clinical decision support tools?",
+      "rule_score": 0.9642857142857143,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_health_002",
+      "citation_count_score": 0.75,
+      "citation_grounding_score": 1.0,
+      "composite_score": 0.8928571428571429,
+      "difficulty": "hard",
+      "domain": "Healthcare",
+      "evidence_count_score": 0.75,
+      "finding_coverage": 0.75,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 1.0,
+      "metadata": {
+        "expected_citation_count": 4,
+        "expected_evidence_count": 4,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "safety",
+          "governance"
+        ]
+      },
+      "question": "What governance practices help healthcare teams evaluate AI triage tools safely?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: What governance practices help healthcare teams evaluate AI triage tools safely?",
+      "rule_score": 0.8928571428571429,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_finance_001",
+      "citation_count_score": 1.0,
+      "citation_grounding_score": 1.0,
+      "composite_score": 1.0,
+      "difficulty": "medium",
+      "domain": "Finance",
+      "evidence_count_score": 1.0,
+      "finding_coverage": 1.0,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 1.0,
+      "metadata": {
+        "expected_citation_count": 3,
+        "expected_evidence_count": 3,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "fraud",
+          "controls"
+        ]
+      },
+      "question": "What controls should financial institutions consider when adopting AI for fraud operations?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: What controls should financial institutions consider when adopting AI for fraud operations?",
+      "rule_score": 1.0,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_finance_002",
+      "citation_count_score": 1.0,
+      "citation_grounding_score": 1.0,
+      "composite_score": 1.0,
+      "difficulty": "easy",
+      "domain": "Finance",
+      "evidence_count_score": 1.0,
+      "finding_coverage": 1.0,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 1.0,
+      "metadata": {
+        "expected_citation_count": 3,
+        "expected_evidence_count": 3,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "payments",
+          "small-business"
+        ]
+      },
+      "question": "What factors influence small business adoption of digital payment platforms?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: What factors influence small business adoption of digital payment platforms?",
+      "rule_score": 1.0,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_climate_001",
+      "citation_count_score": 1.0,
+      "citation_grounding_score": 1.0,
+      "composite_score": 1.0,
+      "difficulty": "medium",
+      "domain": "Climate",
+      "evidence_count_score": 1.0,
+      "finding_coverage": 1.0,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 1.0,
+      "metadata": {
+        "expected_citation_count": 3,
+        "expected_evidence_count": 3,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "resilience",
+          "cities"
+        ]
+      },
+      "question": "What factors affect municipal adoption of climate resilience planning tools?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: What factors affect municipal adoption of climate resilience planning tools?",
+      "rule_score": 1.0,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_climate_002",
+      "citation_count_score": 0.75,
+      "citation_grounding_score": 1.0,
+      "composite_score": 0.8928571428571429,
+      "difficulty": "hard",
+      "domain": "Climate",
+      "evidence_count_score": 0.75,
+      "finding_coverage": 0.75,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 1.0,
+      "metadata": {
+        "expected_citation_count": 4,
+        "expected_evidence_count": 4,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "energy",
+          "infrastructure"
+        ]
+      },
+      "question": "How do grid modernization programs support renewable energy integration?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: How do grid modernization programs support renewable energy integration?",
+      "rule_score": 0.8928571428571429,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_education_001",
+      "citation_count_score": 1.0,
+      "citation_grounding_score": 1.0,
+      "composite_score": 1.0,
+      "difficulty": "medium",
+      "domain": "Education",
+      "evidence_count_score": 1.0,
+      "finding_coverage": 1.0,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 1.0,
+      "metadata": {
+        "expected_citation_count": 3,
+        "expected_evidence_count": 3,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "tutoring",
+          "schools"
+        ]
+      },
+      "question": "What evidence should schools consider before adopting AI tutoring systems?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: What evidence should schools consider before adopting AI tutoring systems?",
+      "rule_score": 1.0,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_education_002",
+      "citation_count_score": 1.0,
+      "citation_grounding_score": 1.0,
+      "composite_score": 1.0,
+      "difficulty": "easy",
+      "domain": "Education",
+      "evidence_count_score": 1.0,
+      "finding_coverage": 1.0,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 1.0,
+      "metadata": {
+        "expected_citation_count": 3,
+        "expected_evidence_count": 3,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "analytics",
+          "teachers"
+        ]
+      },
+      "question": "What factors affect teacher adoption of classroom analytics tools?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: What factors affect teacher adoption of classroom analytics tools?",
+      "rule_score": 1.0,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_cyber_001",
+      "citation_count_score": 1.0,
+      "citation_grounding_score": 1.0,
+      "composite_score": 0.9285714285714286,
+      "difficulty": "medium",
+      "domain": "Cybersecurity",
+      "evidence_count_score": 1.0,
+      "finding_coverage": 1.0,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 0.5,
+      "metadata": {
+        "expected_citation_count": 3,
+        "expected_evidence_count": 3,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "phishing",
+          "training"
+        ]
+      },
+      "question": "What organizational practices improve phishing resilience programs?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: What organizational practices improve phishing resilience programs?",
+      "rule_score": 0.9285714285714286,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_cyber_002",
+      "citation_count_score": 0.75,
+      "citation_grounding_score": 1.0,
+      "composite_score": 0.8928571428571429,
+      "difficulty": "hard",
+      "domain": "Cybersecurity",
+      "evidence_count_score": 0.75,
+      "finding_coverage": 0.75,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 1.0,
+      "metadata": {
+        "expected_citation_count": 4,
+        "expected_evidence_count": 4,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "zero-trust",
+          "architecture"
+        ]
+      },
+      "question": "How should enterprises evaluate zero trust architecture adoption readiness?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: How should enterprises evaluate zero trust architecture adoption readiness?",
+      "rule_score": 0.8928571428571429,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_robotics_001",
+      "citation_count_score": 1.0,
+      "citation_grounding_score": 1.0,
+      "composite_score": 1.0,
+      "difficulty": "medium",
+      "domain": "Robotics",
+      "evidence_count_score": 1.0,
+      "finding_coverage": 1.0,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 1.0,
+      "metadata": {
+        "expected_citation_count": 3,
+        "expected_evidence_count": 3,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "warehouse",
+          "robots"
+        ]
+      },
+      "question": "What factors influence warehouse adoption of autonomous mobile robots?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: What factors influence warehouse adoption of autonomous mobile robots?",
+      "rule_score": 1.0,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_robotics_002",
+      "citation_count_score": 0.75,
+      "citation_grounding_score": 1.0,
+      "composite_score": 0.8928571428571429,
+      "difficulty": "hard",
+      "domain": "Robotics",
+      "evidence_count_score": 0.75,
+      "finding_coverage": 0.75,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 1.0,
+      "metadata": {
+        "expected_citation_count": 4,
+        "expected_evidence_count": 4,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "cobots",
+          "manufacturing"
+        ]
+      },
+      "question": "What safety and operations factors affect collaborative robot deployment in manufacturing?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: What safety and operations factors affect collaborative robot deployment in manufacturing?",
+      "rule_score": 0.8928571428571429,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_policy_001",
+      "citation_count_score": 1.0,
+      "citation_grounding_score": 1.0,
+      "composite_score": 1.0,
+      "difficulty": "medium",
+      "domain": "Public Policy",
+      "evidence_count_score": 1.0,
+      "finding_coverage": 1.0,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 1.0,
+      "metadata": {
+        "expected_citation_count": 3,
+        "expected_evidence_count": 3,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "identity",
+          "public-sector"
+        ]
+      },
+      "question": "What factors affect public sector adoption of digital identity systems?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: What factors affect public sector adoption of digital identity systems?",
+      "rule_score": 1.0,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_policy_002",
+      "citation_count_score": 0.75,
+      "citation_grounding_score": 1.0,
+      "composite_score": 0.8928571428571429,
+      "difficulty": "hard",
+      "domain": "Public Policy",
+      "evidence_count_score": 0.75,
+      "finding_coverage": 0.75,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 1.0,
+      "metadata": {
+        "expected_citation_count": 4,
+        "expected_evidence_count": 4,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "benefits",
+          "automation"
+        ]
+      },
+      "question": "How should agencies evaluate automated benefits eligibility systems?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: How should agencies evaluate automated benefits eligibility systems?",
+      "rule_score": 0.8928571428571429,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_supply_001",
+      "citation_count_score": 1.0,
+      "citation_grounding_score": 1.0,
+      "composite_score": 1.0,
+      "difficulty": "medium",
+      "domain": "Supply Chain",
+      "evidence_count_score": 1.0,
+      "finding_coverage": 1.0,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 1.0,
+      "metadata": {
+        "expected_citation_count": 3,
+        "expected_evidence_count": 3,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "logistics",
+          "visibility"
+        ]
+      },
+      "question": "What factors improve supply chain visibility platform adoption?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: What factors improve supply chain visibility platform adoption?",
+      "rule_score": 1.0,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_agriculture_001",
+      "citation_count_score": 1.0,
+      "citation_grounding_score": 1.0,
+      "composite_score": 1.0,
+      "difficulty": "medium",
+      "domain": "Agriculture",
+      "evidence_count_score": 1.0,
+      "finding_coverage": 1.0,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 1.0,
+      "metadata": {
+        "expected_citation_count": 3,
+        "expected_evidence_count": 3,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "agriculture",
+          "sensors"
+        ]
+      },
+      "question": "What factors influence farm adoption of precision agriculture tools?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: What factors influence farm adoption of precision agriculture tools?",
+      "rule_score": 1.0,
+      "section_coverage": 1.0,
+      "success": true
+    },
+    {
+      "case_id": "plus_transport_001",
+      "citation_count_score": 1.0,
+      "citation_grounding_score": 1.0,
+      "composite_score": 1.0,
+      "difficulty": "medium",
+      "domain": "Transportation",
+      "evidence_count_score": 1.0,
+      "finding_coverage": 1.0,
+      "judge_enabled": false,
+      "judge_result": null,
+      "judge_score": null,
+      "keyword_coverage": 1.0,
+      "metadata": {
+        "expected_citation_count": 3,
+        "expected_evidence_count": 3,
+        "judge_focus": [],
+        "judge_missing": false,
+        "tags": [
+          "transit",
+          "operations"
+        ]
+      },
+      "question": "What factors affect transit agency adoption of real-time passenger information systems?",
+      "red_blue_enabled": false,
+      "red_blue_improvement_score": 1.0,
+      "red_blue_issue_count": 0,
+      "report_title": "Research Report: What factors affect transit agency adoption of real-time passenger information systems?",
+      "rule_score": 1.0,
+      "section_coverage": 1.0,
+      "success": true
+    }
+  ],
+  "run_id": "61f0ec69-2a04-475a-be6f-7e17acb51160",
+  "summary": {
+    "average_composite_score": 0.9625,
+    "average_judge_score": null,
+    "average_rule_score": 0.9625,
+    "benchmark_name": "ResearchBench-mini Plus",
+    "case_count": 20,
+    "difficulty_summary": {
+      "easy": {
+        "average_citation_count_score": 1.0,
+        "average_composite_score": 1.0,
+        "average_evidence_count_score": 1.0,
+        "average_rule_score": 1.0,
+        "case_count": 2
+      },
+      "hard": {
+        "average_citation_count_score": 0.75,
+        "average_composite_score": 0.8928571428571429,
+        "average_evidence_count_score": 0.75,
+        "average_rule_score": 0.8928571428571429,
+        "case_count": 6
+      },
+      "medium": {
+        "average_citation_count_score": 1.0,
+        "average_composite_score": 0.9910714285714285,
+        "average_evidence_count_score": 1.0,
+        "average_rule_score": 0.9910714285714285,
+        "case_count": 12
+      }
+    },
+    "domain_summary": {
+      "AI / LLM": {
+        "average_citation_count_score": 0.9166666666666666,
+        "average_composite_score": 0.9642857142857143,
+        "average_evidence_count_score": 0.9166666666666666,
+        "average_rule_score": 0.9642857142857143,
+        "case_count": 3
+      },
+      "Agriculture": {
+        "average_citation_count_score": 1.0,
+        "average_composite_score": 1.0,
+        "average_evidence_count_score": 1.0,
+        "average_rule_score": 1.0,
+        "case_count": 1
+      },
+      "Climate": {
+        "average_citation_count_score": 0.875,
+        "average_composite_score": 0.9464285714285714,
+        "average_evidence_count_score": 0.875,
+        "average_rule_score": 0.9464285714285714,
+        "case_count": 2
+      },
+      "Cybersecurity": {
+        "average_citation_count_score": 0.875,
+        "average_composite_score": 0.9107142857142858,
+        "average_evidence_count_score": 0.875,
+        "average_rule_score": 0.9107142857142858,
+        "case_count": 2
+      },
+      "Education": {
+        "average_citation_count_score": 1.0,
+        "average_composite_score": 1.0,
+        "average_evidence_count_score": 1.0,
+        "average_rule_score": 1.0,
+        "case_count": 2
+      },
+      "Finance": {
+        "average_citation_count_score": 1.0,
+        "average_composite_score": 1.0,
+        "average_evidence_count_score": 1.0,
+        "average_rule_score": 1.0,
+        "case_count": 2
+      },
+      "Healthcare": {
+        "average_citation_count_score": 0.875,
+        "average_composite_score": 0.9285714285714286,
+        "average_evidence_count_score": 0.875,
+        "average_rule_score": 0.9285714285714286,
+        "case_count": 2
+      },
+      "Public Policy": {
+        "average_citation_count_score": 0.875,
+        "average_composite_score": 0.9464285714285714,
+        "average_evidence_count_score": 0.875,
+        "average_rule_score": 0.9464285714285714,
+        "case_count": 2
+      },
+      "Robotics": {
+        "average_citation_count_score": 0.875,
+        "average_composite_score": 0.9464285714285714,
+        "average_evidence_count_score": 0.875,
+        "average_rule_score": 0.9464285714285714,
+        "case_count": 2
+      },
+      "Supply Chain": {
+        "average_citation_count_score": 1.0,
+        "average_composite_score": 1.0,
+        "average_evidence_count_score": 1.0,
+        "average_rule_score": 1.0,
+        "case_count": 1
+      },
+      "Transportation": {
+        "average_citation_count_score": 1.0,
+        "average_composite_score": 1.0,
+        "average_evidence_count_score": 1.0,
+        "average_rule_score": 1.0,
+        "case_count": 1
+      }
+    },
+    "failed_cases": 0,
+    "judge_enabled": false
+  }
+}

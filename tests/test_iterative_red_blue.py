@@ -168,6 +168,45 @@ class TestIterativeRedBlue(unittest.TestCase):
         self._runner([0], [[]]).run(context, self._report(), self._findings())
 
         self.assertEqual(len(memory.list_by_type("red_blue_loop")), 1)
+        self.assertEqual(len(memory.list_by_type("red_blue_loop_summary")), 1)
+
+    def test_loop_result_contains_round_snapshots_and_summary(self) -> None:
+        result = self._runner([1, 0], [[]]).run(
+            self._context(),
+            self._report(),
+            self._findings(),
+        )
+
+        self.assertGreater(len(result.round_snapshots), 0)
+        self.assertIsNotNone(result.loop_summary)
+        self.assertIn("red_blue_convergence_status", result.metadata)
+        self.assertIn("red_blue_stop_reason", result.metadata)
+        self.assertIn("red_blue_round_count", result.metadata)
+
+    def test_loop_metadata_marks_no_improvement(self) -> None:
+        result = self._runner(
+            [2, 2, 2],
+            [["issue-1"], ["issue-1"]],
+            max_rounds=3,
+            no_improvement_rounds=1,
+            oscillation=False,
+        ).run(self._context(), self._report(), self._findings())
+
+        self.assertEqual(result.stop_reason, "no_improvement")
+        self.assertEqual(result.metadata["red_blue_convergence_status"], "NO_IMPROVEMENT")
+
+    def test_loop_metadata_marks_oscillation(self) -> None:
+        result = self._runner(
+            [2, 2, 2],
+            [["issue-1"], ["issue-1"]],
+            max_rounds=3,
+            no_improvement_rounds=3,
+            oscillation=True,
+        ).run(self._context(), self._report(), self._findings())
+
+        self.assertEqual(result.stop_reason, "oscillation_detected")
+        self.assertEqual(result.metadata["red_blue_convergence_status"], "OSCILLATION_DETECTED")
+        self.assertTrue(result.metadata["red_blue_oscillation_detected"])
 
     def test_pipeline_runs_with_red_blue_loop_enabled(self) -> None:
         result = run_research_pipeline(

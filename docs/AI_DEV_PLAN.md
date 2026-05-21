@@ -186,8 +186,36 @@ This document defines the staged implementation plan for DeepResearchAgent.
 - Add lightweight TextRank sentence reranking without external dependencies
 - Preserve citations, source URLs, titles, quotes, and metadata in compressed contexts
 - Keep compression optional and separate from checkpoint, replan, and vector memory storage
+- Status: completed
+
+## Phase 22: Red-Blue Convergence / Oscillation Detection
+
+- Add structured Red-Blue round snapshots, issue fingerprints, and report hashes
+- Add deterministic convergence decisions with convergence scores
+- Detect no-improvement and issue/report oscillation in iterative Red-Blue loops
+- Record Red-Blue loop summaries in metadata and SharedMemory
+- Keep RedAgent, BlueAgent, WriterAgent, and DAG executor behavior unchanged
+- Status: completed
+
+## Phase 23: ResearchBench-mini Plus
+
+- Add a richer local benchmark case schema with domain, difficulty, evidence, citation, section, and keyword expectations
+- Add at least 20 deterministic benchmark cases across multiple domains
+- Add rule score, optional judge score, and composite score aggregation
+- Add domain and difficulty summaries plus JSON/Markdown reports
+- Add before/after and Red-Blue enabled/disabled comparison helpers
+- Keep statistical significance testing out of scope
+- Status: completed
+
+## Phase 24: Statistical Evaluation
+
+- Add bootstrap confidence intervals for evaluation score means
+- Add paired bootstrap confidence intervals for baseline/candidate score deltas
+- Add paired Cohen's d effect size summaries
+- Add optional statistical summaries to comparison JSON/Markdown reports
+- Keep p-values, t-tests, and complex significance testing out of scope
 - Status: current phase
 
 ## Current Implementation Boundary
 
-The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM, optional provider-based web search and HTTP fetch, optional local asyncio DAG execution, node-level checkpoint/resume, deterministic dynamic replan, optional bounded iterative Red/Blue review, optional SQLite run persistence, optional local SQLite vector memory, optional local context compression, and optional LLM-as-Judge mini evaluation when configured. Citation grounding is rule-based through local evidence/citation IDs; the project does not perform JavaScript-rendered page extraction, production-grade semantic extraction, semantic fact verification, distributed execution, multi-judge voting, statistical significance testing, complex benchmark evaluation, external vector database retrieval, or real embedding API calls.
+The project remains deterministic by default and uses mock search/fetch. It can optionally call an OpenAI-compatible LLM, optional provider-based web search and HTTP fetch, optional local asyncio DAG execution, node-level checkpoint/resume, deterministic dynamic replan, optional bounded iterative Red/Blue review with convergence and oscillation detection, optional SQLite run persistence, optional local SQLite vector memory, optional local context compression, optional LLM-as-Judge mini evaluation, local ResearchBench-mini Plus evaluation, and optional bootstrap/effect-size statistical comparison when configured. Citation grounding is rule-based through local evidence/citation IDs; the project does not perform JavaScript-rendered page extraction, production-grade semantic extraction, semantic fact verification, distributed execution, multi-judge voting, p-value or t-test significance testing, external vector database retrieval, or real embedding API calls.

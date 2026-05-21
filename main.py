@@ -24,11 +24,17 @@ DEMO_QUESTION = "What are the main factors that affect open-source LLM adoption 
 DEFAULT_CHECKPOINT_DIR = "runs/checkpoints"
 
 
-def build_demo_execution(load_dotenv: bool = False, resume_from_run_id: str | None = None) -> dict:
+def build_demo_execution(
+    load_dotenv: bool = False,
+    resume_from_run_id: str | None = None,
+    red_blue_loop_enabled: bool | None = None,
+) -> dict:
     llm_config = load_llm_config_from_env(load_dotenv=load_dotenv)
     search_config = load_search_config_from_env(load_dotenv=load_dotenv)
     dag_config = load_dag_execution_config_from_env(load_dotenv=load_dotenv)
     red_blue_loop_execution_config = load_red_blue_loop_config_from_env(load_dotenv=load_dotenv)
+    if red_blue_loop_enabled is not None:
+        red_blue_loop_execution_config.enabled = red_blue_loop_enabled
     run_store_config = load_run_store_config_from_env(load_dotenv=load_dotenv)
     red_blue_loop_config = RedBlueLoopConfig(
         max_rounds=red_blue_loop_execution_config.max_rounds,
@@ -102,8 +108,13 @@ def build_demo_review() -> dict:
 
 
 def main() -> None:
-    resume_from_run_id = _parse_resume_arg(sys.argv[1:])
-    execution = build_demo_execution(load_dotenv=True, resume_from_run_id=resume_from_run_id)
+    cli_args = _parse_cli_args(sys.argv[1:])
+    resume_from_run_id = cli_args["resume_from_run_id"]
+    execution = build_demo_execution(
+        load_dotenv=True,
+        resume_from_run_id=resume_from_run_id,
+        red_blue_loop_enabled=cli_args["red_blue_loop_enabled"],
+    )
     critic_review = execution["critic_review"]
     red_review = execution["red_review"]
     blue_revision = execution["blue_revision"]
@@ -172,6 +183,18 @@ def main() -> None:
         print(f"Red-Blue max_rounds: {red_blue_loop_execution_config.max_rounds}")
         print(f"Red-Blue loop rounds: {len(red_blue_loop_result.rounds)}")
         print(f"Red-Blue loop stop_reason: {red_blue_loop_result.stop_reason}")
+        print(
+            "Red-Blue convergence status: "
+            f"{red_blue_loop_result.metadata.get('red_blue_convergence_status')}"
+        )
+        print(
+            "Red-Blue convergence stop reason: "
+            f"{red_blue_loop_result.metadata.get('red_blue_stop_reason')}"
+        )
+        print(
+            "Red-Blue oscillation detected: "
+            f"{red_blue_loop_result.metadata.get('red_blue_oscillation_detected')}"
+        )
         print(f"Red-Blue loop total_fixed_issues: {red_blue_loop_result.total_fixed_issues}")
         print(f"Red-Blue loop remaining_issue_count: {red_blue_loop_result.remaining_issue_count}")
     if run_store_config.enabled:
@@ -206,12 +229,27 @@ def main() -> None:
         print(f"- {item_type}: {len(memory.list_by_type(item_type))}")
 
 
+def _parse_cli_args(args: list[str]) -> dict:
+    parsed = {
+        "resume_from_run_id": None,
+        "red_blue_loop_enabled": None,
+    }
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--resume":
+            if index + 1 < len(args) and not args[index + 1].startswith("--"):
+                parsed["resume_from_run_id"] = args[index + 1]
+                index += 2
+                continue
+        elif arg == "--red-blue-loop":
+            parsed["red_blue_loop_enabled"] = True
+        index += 1
+    return parsed
+
+
 def _parse_resume_arg(args: list[str]) -> str | None:
-    if not args:
-        return None
-    if args[0] == "--resume" and len(args) >= 2:
-        return args[1]
-    return None
+    return _parse_cli_args(args)["resume_from_run_id"]
 
 
 if __name__ == "__main__":

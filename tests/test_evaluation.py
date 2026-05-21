@@ -11,7 +11,7 @@ from evaluation.metrics import (
     red_blue_improvement,
     section_coverage,
 )
-from evaluation.run_eval import load_cases, run_case, run_eval
+from evaluation.run_eval import _load_eval_json, load_cases, run_case, run_eval
 
 
 class TestEvaluation(unittest.TestCase):
@@ -125,6 +125,15 @@ class TestEvaluation(unittest.TestCase):
 
         self.assertEqual(result["summary"]["total_cases"], 1)
         self.assertEqual(result["summary"]["failed_cases"], 0)
+
+    def test_load_eval_json_missing_file_has_clear_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            missing_path = Path(temp_dir) / "missing.json"
+
+            with self.assertRaises(FileNotFoundError) as context:
+                _load_eval_json(str(missing_path))
+
+        self.assertIn("Evaluation result file not found", str(context.exception))
 
     @staticmethod
     def _report(markdown: str = "# T", citations=None) -> ResearchReport:

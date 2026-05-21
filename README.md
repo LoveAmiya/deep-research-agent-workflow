@@ -6,7 +6,7 @@ The current implementation is a deterministic local prototype by default. Search
 
 ## Current Status
 
-The repository is currently at Phase 19: Dynamic Replan for Failed / Insufficient DAG Runs.
+The repository is currently at Phase 24: Statistical Evaluation.
 
 Implemented capabilities:
 
@@ -26,13 +26,18 @@ Implemented capabilities:
 - robust web fetcher abstraction with lightweight HTML title/main text extraction
 - JSON checkpoint/resume for DAG runs
 - deterministic rule-based dynamic replan for failed or insufficient DAG runs
+- local SQLite vector memory for evidence and node artifacts
+- local context compression for citation-preserving evidence selection
 - lightweight evidence spans, citation IDs, citation markers, and citation validation
 - optional asyncio DAG executor with max concurrency, timeout, and async traces
-- optional iterative rule-based Red/Blue review loop with bounded convergence checks
+- optional iterative rule-based Red/Blue review loop with structured convergence and oscillation detection
+- ResearchBench-mini Plus local benchmark with expected evidence/citation/section/keyword configuration
+- rule + optional judge composite scoring and before/after comparison summaries
+- optional bootstrap confidence intervals, paired delta confidence intervals, and paired Cohen's d effect size summaries
 - optional SQLite run-level persistence for debugging and replay
 - optional LLM-as-Judge mini evaluation with deterministic mock/fallback support
 
-This phase does not include JavaScript-rendered page extraction, semantic evidence verification, distributed execution, vector memory, context compression, multi-judge voting, Bootstrap CI, Cohen's d, or external benchmark downloads.
+This phase does not include JavaScript-rendered page extraction, semantic evidence verification, distributed execution, multi-judge voting, p-values, t-tests, or external benchmark downloads.
 
 ## Directory Structure
 
@@ -130,7 +135,7 @@ set DEEP_RESEARCH_RED_BLUE_NO_IMPROVEMENT_ROUNDS=2
 set DEEP_RESEARCH_RED_BLUE_OSCILLATION_DETECTION=true
 ```
 
-The loop stops on Red pass, max rounds, no improvement, repeated remaining issue signatures, or agent failure.
+The loop stops on Red pass, max rounds, no improvement, issue/report oscillation, Blue unable to fix, or agent failure. Detection is deterministic and rule-based, not statistical evaluation or multi-judge voting.
 
 ## Optional Run Persistence
 
@@ -174,6 +179,38 @@ python -m evaluation.run_eval
 
 This runs local ResearchBench-mini style JSONL cases and prints rule metric averages.
 
+ResearchBench-mini Plus can be run explicitly:
+
+```bash
+python -m evaluation.run_eval --bench plus
+```
+
+Optional report files:
+
+```bash
+python -m evaluation.run_eval --bench plus --output-json evaluation/results/latest_eval.json --output-md evaluation/results/latest_eval.md
+```
+
+Evaluation comparison is descriptive and deterministic:
+
+```bash
+python -m evaluation.run_eval --compare evaluation/results/baseline.json evaluation/results/candidate.json
+```
+
+Statistical comparison is opt-in and dependency-free:
+
+```bash
+python -m evaluation.run_eval --compare evaluation/results/baseline.json evaluation/results/candidate.json --stats
+```
+
+Red-Blue comparison can also include statistical summaries:
+
+```bash
+python -m evaluation.run_eval --bench plus --compare-red-blue --stats
+```
+
+Phase 24 reports bootstrap confidence intervals and paired Cohen's d effect sizes. It does not report p-values or t-tests.
+
 ## Optional LLM-as-Judge Evaluation
 
 By default LLM judge is disabled and rule metrics are unchanged. To enable judge evaluation:
@@ -202,9 +239,11 @@ This is not multi-model judging, human annotation, or full ResearchBench.
 - dynamic replan is rule-based and bounded, not an LLM planning system
 - citation grounding is rule-based and not semantic fact verification
 - async DAG execution is local asyncio scheduling, not distributed execution
-- no vector memory or embeddings
+- vector memory and context compression are local deterministic utilities, not external vector databases or real embedding APIs
 - LLM-as-Judge is optional mini-evaluation, not multi-judge or external fact verification
-- no complex ResearchBench implementation
+- Red/Blue convergence detection is deterministic, not a statistical significance test
+- ResearchBench-mini Plus is a local deterministic benchmark, not a large external benchmark
+- statistical evaluation is limited to bootstrap intervals and paired effect sizes; it does not implement p-values or t-tests
 - Red/Blue review is deterministic; iterative mode is bounded and rule-based
 - SQLite persistence is run-level storage, not semantic long-term memory
 
@@ -230,5 +269,10 @@ This is not multi-model judging, human annotation, or full ResearchBench.
 - Phase 17: Robust web fetch and lightweight content extraction
 - Phase 18: Checkpoint/resume for DAG runs
 - Phase 19: Deterministic dynamic replan for failed or insufficient DAG runs
+- Phase 20: Vector memory / evidence memory store
+- Phase 21: Context compression
+- Phase 22: Red-Blue convergence / oscillation detection
+- Phase 23: ResearchBench-mini Plus
+- Phase 24: Statistical evaluation
 
-Future work can add stronger LLM planning, JavaScript-rendered page support, semantic evidence verification, better source parsing, vector memory, context compression, and stronger evaluation.
+Future work can add stronger LLM planning, JavaScript-rendered page support, semantic evidence verification, better source parsing, and stronger evaluation.

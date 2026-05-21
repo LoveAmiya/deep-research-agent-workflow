@@ -2,7 +2,7 @@
 
 ## One-Sentence Summary
 
-DeepResearchAgent is a deterministic-by-default multi-agent research workflow prototype with optional LLM assistance, provider-based optional web search and robust web fetch, citation grounding, sync/async DAG orchestration, checkpoint/resume, rule-based dynamic replan, shared memory, SQLite vector memory, context compression, bounded rule-based Red/Blue review/revision, SQLite run persistence, optional LLM-as-Judge mini-evaluation, and local rule evaluation.
+DeepResearchAgent is a deterministic-by-default multi-agent research workflow prototype with optional LLM assistance, provider-based optional web search and robust web fetch, citation grounding, sync/async DAG orchestration, checkpoint/resume, rule-based dynamic replan, shared memory, SQLite vector memory, context compression, bounded rule-based Red/Blue review/revision with convergence and oscillation detection, SQLite run persistence, optional LLM-as-Judge mini-evaluation, local ResearchBench-mini Plus evaluation, and optional statistical evaluation summaries.
 
 ## Tech Stack
 
@@ -18,6 +18,8 @@ DeepResearchAgent is a deterministic-by-default multi-agent research workflow pr
 - deterministic rule-based replan policy and DAG replanner
 - deterministic hash embeddings for local vector memory and context compression
 - lightweight TextRank-style context compression
+- deterministic Red-Blue convergence and oscillation detection
+- ResearchBench-mini Plus local benchmark, deterministic comparison reports, and optional bootstrap/effect-size summaries
 - no external runtime dependencies in the current phase
 
 ## Core Modules
@@ -25,6 +27,7 @@ DeepResearchAgent is a deterministic-by-default multi-agent research workflow pr
 - `core/schema.py`: data contracts for questions, plans, findings, reports, and review results
 - `agents/`: planner, searcher, reader, writer, critic, red, and blue agents
 - `agents/red_blue_loop.py`: optional bounded iterative Red/Blue runner
+- `agents/red_blue_convergence.py`: issue fingerprints, report hashes, convergence decisions, and loop summaries
 - `orchestrator/`: DAG nodes, graph validation, sync/async executors, trace recording, and pipeline runner
 - `orchestrator/checkpoint.py`: JSON checkpoint store and run/node checkpoint data structures
 - `orchestrator/replan.py` and `orchestrator/dag_replanner.py`: deterministic replan policy and remedial DAG mutation
@@ -34,7 +37,7 @@ DeepResearchAgent is a deterministic-by-default multi-agent research workflow pr
 - `tools/`: mock and optional web search/fetch tools
 - `search/`: search provider abstractions, provider responses, web fetchers, content extraction, and fallback registry
 - `tools/citation_tool.py`: in-memory evidence/citation registry and validator
-- `evaluation/`: JSONL cases, rule metrics, and eval runner
+- `evaluation/`: JSONL cases, ResearchBench-mini Plus cases, rule/composite metrics, comparison helpers, statistical summaries, reports, and eval runner
 - `evaluation/llm_judge.py`: optional LLM-as-Judge mini evaluator
 - `tests/`: coverage for schema, agents, DAG, memory, Red/Blue review, and evaluation
 
@@ -66,8 +69,9 @@ ResearchQuestion
 - optional context compression that preserves citations, source URLs, titles, and short quotes
 - rule-based CriticAgent checks
 - single-round RedAgent / BlueAgent review and revision
-- optional iterative Red/Blue loop with convergence and oscillation guards
-- ResearchBench-mini local evaluation with deterministic rule metrics
+- optional iterative Red/Blue loop with structured convergence decisions and oscillation detection
+- ResearchBench-mini and ResearchBench-mini Plus local evaluation with deterministic rule/composite metrics
+- optional statistical evaluation with bootstrap confidence intervals, paired score delta intervals, and paired Cohen's d
 - mock search pipeline that keeps runs reproducible and dependency-free
 - provider-based search fallback with mock, DuckDuckGo HTML wrapper, and API-provider skeletons
 - robust fetcher interface with mock and HTTP fetchers plus lightweight content extraction
@@ -89,7 +93,9 @@ ResearchQuestion
 - checkpoint/resume is node-level execution recovery, not semantic memory or dynamic replan
 - dynamic replan is deterministic and bounded, not a complex LLM planner
 - context compression is deterministic and local, not LLM summarization
+- Red-Blue convergence detection is deterministic and rule-based, not statistical significance testing
 - LLM-as-Judge is optional and does not include multi-judge voting or external fact verification
+- statistical evaluation is limited to bootstrap confidence intervals and paired effect sizes; it does not include p-values or t-tests
 - no complex scoring or adversarial training
 - no complex benchmark framework
 

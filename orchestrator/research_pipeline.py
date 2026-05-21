@@ -319,6 +319,11 @@ def build_research_pipeline_result(
             critic_review=outputs["critic_task"].output,
         )
         final_report = red_blue_loop_result.final_report
+    red_blue_loop_metadata = (
+        dict(getattr(red_blue_loop_result, "metadata", {}) or {})
+        if red_blue_loop_result is not None
+        else {}
+    )
     citation_validation = CitationValidator().validate_report_citations(
         final_report,
         citation_registry,
@@ -344,6 +349,7 @@ def build_research_pipeline_result(
         "checkpoint": checkpoint,
         "checkpoint_metadata": {
             **getattr(execution, "metadata", {}),
+            **red_blue_loop_metadata,
             "resume_checkpoint_missing": resume_missing,
         },
     }

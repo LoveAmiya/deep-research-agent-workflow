@@ -1,0 +1,485 @@
+{
+  "benchmark_name": "Evaluation Comparison",
+  "comparison": {
+    "baseline_name": "baseline",
+    "candidate_name": "candidate",
+    "case_count": 20,
+    "domain_deltas": {
+      "AI / LLM": {
+        "case_count": 3,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Agriculture": {
+        "case_count": 1,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Climate": {
+        "case_count": 2,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Cybersecurity": {
+        "case_count": 2,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Education": {
+        "case_count": 2,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Finance": {
+        "case_count": 2,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Healthcare": {
+        "case_count": 2,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Public Policy": {
+        "case_count": 2,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Robotics": {
+        "case_count": 2,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Supply Chain": {
+        "case_count": 1,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Transportation": {
+        "case_count": 1,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      }
+    },
+    "improved_cases": [],
+    "metadata": {
+      "baseline_case_count": 20,
+      "candidate_case_count": 20
+    },
+    "metric_deltas": {
+      "citation_coverage_delta": 0.0,
+      "composite_score_delta": 0.0,
+      "evidence_count_delta": 0.0,
+      "judge_score_delta": 0.0,
+      "red_blue_issue_count_delta": 0.0,
+      "rule_score_delta": 0.0
+    },
+    "regressed_cases": [],
+    "statistical_summary": {
+      "baseline_ci": {
+        "confidence_level": 0.95,
+        "lower": 0.9383482142857142,
+        "mean": 0.9624999999999998,
+        "metadata": {
+          "method": "percentile"
+        },
+        "metric_name": "composite_score",
+        "num_bootstrap": 100,
+        "sample_size": 20,
+        "seed": 42,
+        "upper": 0.9804464285714284
+      },
+      "baseline_mean": 0.9624999999999998,
+      "baseline_name": "baseline",
+      "candidate_ci": {
+        "confidence_level": 0.95,
+        "lower": 0.9383482142857142,
+        "mean": 0.9624999999999998,
+        "metadata": {
+          "method": "percentile"
+        },
+        "metric_name": "composite_score",
+        "num_bootstrap": 100,
+        "sample_size": 20,
+        "seed": 42,
+        "upper": 0.9804464285714284
+      },
+      "candidate_mean": 0.9624999999999998,
+      "candidate_name": "candidate",
+      "delta_ci": {
+        "confidence_level": 0.95,
+        "lower": 0.0,
+        "mean": 0.0,
+        "metadata": {
+          "method": "paired_percentile"
+        },
+        "metric_name": "composite_score_delta",
+        "num_bootstrap": 100,
+        "sample_size": 20,
+        "seed": 42,
+        "upper": 0.0
+      },
+      "effect_size": {
+        "effect_size_type": "cohens_dz",
+        "interpretation": "none",
+        "mean_delta": 0.0,
+        "metadata": {
+          "zero_variance": true
+        },
+        "metric_name": "composite_score",
+        "sample_size": 20,
+        "std_delta": 0.0,
+        "value": 0.0
+      },
+      "improved": false,
+      "mean_delta": 0.0,
+      "metadata": {
+        "baseline_case_count": 20,
+        "candidate_case_count": 20,
+        "compared_case_ids": [
+          "plus_agriculture_001",
+          "plus_ai_001",
+          "plus_ai_002",
+          "plus_ai_003",
+          "plus_climate_001",
+          "plus_climate_002",
+          "plus_cyber_001",
+          "plus_cyber_002",
+          "plus_education_001",
+          "plus_education_002",
+          "plus_finance_001",
+          "plus_finance_002",
+          "plus_health_001",
+          "plus_health_002",
+          "plus_policy_001",
+          "plus_policy_002",
+          "plus_robotics_001",
+          "plus_robotics_002",
+          "plus_supply_001",
+          "plus_transport_001"
+        ],
+        "non_significance_test": true,
+        "shared_case_count": 20,
+        "skipped_case_count": 0,
+        "skipped_cases": []
+      },
+      "metric_name": "composite_score",
+      "sample_size": 20,
+      "skipped_cases": [],
+      "summary": "candidate vs baseline on composite_score: mean delta 0.000; 95% paired bootstrap CI [0.000, 0.000]; effect size none."
+    },
+    "summary": "candidate vs baseline: 0 improved, 0 regressed, 20 unchanged; composite delta 0.000.",
+    "unchanged_cases": [
+      "plus_agriculture_001",
+      "plus_ai_001",
+      "plus_ai_002",
+      "plus_ai_003",
+      "plus_climate_001",
+      "plus_climate_002",
+      "plus_cyber_001",
+      "plus_cyber_002",
+      "plus_education_001",
+      "plus_education_002",
+      "plus_finance_001",
+      "plus_finance_002",
+      "plus_health_001",
+      "plus_health_002",
+      "plus_policy_001",
+      "plus_policy_002",
+      "plus_robotics_001",
+      "plus_robotics_002",
+      "plus_supply_001",
+      "plus_transport_001"
+    ]
+  },
+  "comparison_summary": {
+    "baseline_name": "baseline",
+    "candidate_name": "candidate",
+    "case_count": 20,
+    "domain_deltas": {
+      "AI / LLM": {
+        "case_count": 3,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Agriculture": {
+        "case_count": 1,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Climate": {
+        "case_count": 2,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Cybersecurity": {
+        "case_count": 2,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Education": {
+        "case_count": 2,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Finance": {
+        "case_count": 2,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Healthcare": {
+        "case_count": 2,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Public Policy": {
+        "case_count": 2,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Robotics": {
+        "case_count": 2,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Supply Chain": {
+        "case_count": 1,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      },
+      "Transportation": {
+        "case_count": 1,
+        "composite_score_delta": 0.0,
+        "rule_score_delta": 0.0
+      }
+    },
+    "improved_cases": [],
+    "metadata": {
+      "baseline_case_count": 20,
+      "candidate_case_count": 20
+    },
+    "metric_deltas": {
+      "citation_coverage_delta": 0.0,
+      "composite_score_delta": 0.0,
+      "evidence_count_delta": 0.0,
+      "judge_score_delta": 0.0,
+      "red_blue_issue_count_delta": 0.0,
+      "rule_score_delta": 0.0
+    },
+    "regressed_cases": [],
+    "statistical_summary": {
+      "baseline_ci": {
+        "confidence_level": 0.95,
+        "lower": 0.9383482142857142,
+        "mean": 0.9624999999999998,
+        "metadata": {
+          "method": "percentile"
+        },
+        "metric_name": "composite_score",
+        "num_bootstrap": 100,
+        "sample_size": 20,
+        "seed": 42,
+        "upper": 0.9804464285714284
+      },
+      "baseline_mean": 0.9624999999999998,
+      "baseline_name": "baseline",
+      "candidate_ci": {
+        "confidence_level": 0.95,
+        "lower": 0.9383482142857142,
+        "mean": 0.9624999999999998,
+        "metadata": {
+          "method": "percentile"
+        },
+        "metric_name": "composite_score",
+        "num_bootstrap": 100,
+        "sample_size": 20,
+        "seed": 42,
+        "upper": 0.9804464285714284
+      },
+      "candidate_mean": 0.9624999999999998,
+      "candidate_name": "candidate",
+      "delta_ci": {
+        "confidence_level": 0.95,
+        "lower": 0.0,
+        "mean": 0.0,
+        "metadata": {
+          "method": "paired_percentile"
+        },
+        "metric_name": "composite_score_delta",
+        "num_bootstrap": 100,
+        "sample_size": 20,
+        "seed": 42,
+        "upper": 0.0
+      },
+      "effect_size": {
+        "effect_size_type": "cohens_dz",
+        "interpretation": "none",
+        "mean_delta": 0.0,
+        "metadata": {
+          "zero_variance": true
+        },
+        "metric_name": "composite_score",
+        "sample_size": 20,
+        "std_delta": 0.0,
+        "value": 0.0
+      },
+      "improved": false,
+      "mean_delta": 0.0,
+      "metadata": {
+        "baseline_case_count": 20,
+        "candidate_case_count": 20,
+        "compared_case_ids": [
+          "plus_agriculture_001",
+          "plus_ai_001",
+          "plus_ai_002",
+          "plus_ai_003",
+          "plus_climate_001",
+          "plus_climate_002",
+          "plus_cyber_001",
+          "plus_cyber_002",
+          "plus_education_001",
+          "plus_education_002",
+          "plus_finance_001",
+          "plus_finance_002",
+          "plus_health_001",
+          "plus_health_002",
+          "plus_policy_001",
+          "plus_policy_002",
+          "plus_robotics_001",
+          "plus_robotics_002",
+          "plus_supply_001",
+          "plus_transport_001"
+        ],
+        "non_significance_test": true,
+        "shared_case_count": 20,
+        "skipped_case_count": 0,
+        "skipped_cases": []
+      },
+      "metric_name": "composite_score",
+      "sample_size": 20,
+      "skipped_cases": [],
+      "summary": "candidate vs baseline on composite_score: mean delta 0.000; 95% paired bootstrap CI [0.000, 0.000]; effect size none."
+    },
+    "summary": "candidate vs baseline: 0 improved, 0 regressed, 20 unchanged; composite delta 0.000.",
+    "unchanged_cases": [
+      "plus_agriculture_001",
+      "plus_ai_001",
+      "plus_ai_002",
+      "plus_ai_003",
+      "plus_climate_001",
+      "plus_climate_002",
+      "plus_cyber_001",
+      "plus_cyber_002",
+      "plus_education_001",
+      "plus_education_002",
+      "plus_finance_001",
+      "plus_finance_002",
+      "plus_health_001",
+      "plus_health_002",
+      "plus_policy_001",
+      "plus_policy_002",
+      "plus_robotics_001",
+      "plus_robotics_002",
+      "plus_supply_001",
+      "plus_transport_001"
+    ]
+  },
+  "results": [],
+  "statistical_summary": {
+    "baseline_ci": {
+      "confidence_level": 0.95,
+      "lower": 0.9383482142857142,
+      "mean": 0.9624999999999998,
+      "metadata": {
+        "method": "percentile"
+      },
+      "metric_name": "composite_score",
+      "num_bootstrap": 100,
+      "sample_size": 20,
+      "seed": 42,
+      "upper": 0.9804464285714284
+    },
+    "baseline_mean": 0.9624999999999998,
+    "baseline_name": "baseline",
+    "candidate_ci": {
+      "confidence_level": 0.95,
+      "lower": 0.9383482142857142,
+      "mean": 0.9624999999999998,
+      "metadata": {
+        "method": "percentile"
+      },
+      "metric_name": "composite_score",
+      "num_bootstrap": 100,
+      "sample_size": 20,
+      "seed": 42,
+      "upper": 0.9804464285714284
+    },
+    "candidate_mean": 0.9624999999999998,
+    "candidate_name": "candidate",
+    "delta_ci": {
+      "confidence_level": 0.95,
+      "lower": 0.0,
+      "mean": 0.0,
+      "metadata": {
+        "method": "paired_percentile"
+      },
+      "metric_name": "composite_score_delta",
+      "num_bootstrap": 100,
+      "sample_size": 20,
+      "seed": 42,
+      "upper": 0.0
+    },
+    "effect_size": {
+      "effect_size_type": "cohens_dz",
+      "interpretation": "none",
+      "mean_delta": 0.0,
+      "metadata": {
+        "zero_variance": true
+      },
+      "metric_name": "composite_score",
+      "sample_size": 20,
+      "std_delta": 0.0,
+      "value": 0.0
+    },
+    "improved": false,
+    "mean_delta": 0.0,
+    "metadata": {
+      "baseline_case_count": 20,
+      "candidate_case_count": 20,
+      "compared_case_ids": [
+        "plus_agriculture_001",
+        "plus_ai_001",
+        "plus_ai_002",
+        "plus_ai_003",
+        "plus_climate_001",
+        "plus_climate_002",
+        "plus_cyber_001",
+        "plus_cyber_002",
+        "plus_education_001",
+        "plus_education_002",
+        "plus_finance_001",
+        "plus_finance_002",
+        "plus_health_001",
+        "plus_health_002",
+        "plus_policy_001",
+        "plus_policy_002",
+        "plus_robotics_001",
+        "plus_robotics_002",
+        "plus_supply_001",
+        "plus_transport_001"
+      ],
+      "non_significance_test": true,
+      "shared_case_count": 20,
+      "skipped_case_count": 0,
+      "skipped_cases": []
+    },
+    "metric_name": "composite_score",
+    "sample_size": 20,
+    "skipped_cases": [],
+    "summary": "candidate vs baseline on composite_score: mean delta 0.000; 95% paired bootstrap CI [0.000, 0.000]; effect size none."
+  },
+  "summary": {
+    "benchmark_name": "Evaluation Comparison",
+    "case_count": 20
+  }
+}
