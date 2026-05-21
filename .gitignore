@@ -1,15 +1,61 @@
-.venv/
+# Python cache
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*$py.class
+
+# Virtual environment
+.venv/
+venv/
+env/
+ENV/
+
+# Test / coverage cache
 .pytest_cache/
 .mypy_cache/
-.env
-logs/
-runs/
-*.sqlite3
-*.db
-*.log
-*.jsonl.tmp
-.DS_Store
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# IDE / OS files
 .vscode/
 .idea/
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets.*
+
+# Local databases / run outputs
+*.sqlite3
+*.db
+runs/
+
+# Generated reports / temporary outputs
+*.tmp
+*.jsonl.tmp
+tmp/
+temp/
+outputs/tmp/
+reports/tmp/
+evaluation/results/latest_*
+evaluation/results/tmp_*
