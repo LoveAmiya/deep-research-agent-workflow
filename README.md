@@ -57,6 +57,43 @@ examples/      Demo question examples
 
 No external packages are required for the current phase.
 
+## Visual Report Workbench
+
+This repository now includes a small browser-based report workbench for interview and demo use. It runs the real DeepResearch pipeline and shows the final report, the initial draft, review diff, findings, citation validation, and the contribution of each agent step.
+
+```bash
+python report_workbench.py
+```
+
+Then open:
+
+```text
+http://127.0.0.1:18181
+```
+
+The workbench calls `POST /api/research` and returns:
+
+- `finalReportMarkdown`
+- `initialReportMarkdown`
+- `reportDiffSummary`
+- `stepImpacts`
+- `findings`
+- `citationValidation`
+- `memoryTimeline`
+- `executionTrace`
+
+For PowerShell:
+
+```powershell
+.\run_workbench.ps1
+```
+
+To verify the workbench payload:
+
+```bash
+python -m unittest tests.test_report_workbench
+```
+
 ## Run Tests
 
 ```bash
