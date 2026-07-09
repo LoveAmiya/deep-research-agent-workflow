@@ -1,315 +1,343 @@
 # DeepResearchAgent
 
-DeepResearchAgent is a multi-agent system for complex, open-ended research workflows. The long-term goal is to coordinate planning, evidence collection, synthesis, critique, and report generation in a structured research pipeline.
+[English](#english) | [中文](#中文)
 
-The current implementation is a deterministic local prototype by default. Search results and fetched pages are mock data unless web search is explicitly enabled, LLM calls are optional, citations are grounded through an in-memory registry, and evaluation uses rule metrics.
+---
 
-## Current Status
+## English
 
-The repository is currently at Phase 24: Statistical Evaluation.
+DeepResearchAgent is a local multi-agent research workflow that turns a research question into a structured Markdown report.
 
-Implemented capabilities:
+It demonstrates how a research task can be split across specialized agents:
 
-- a minimal multi-agent research pipeline
-- unified agent inputs and outputs through `AgentContext` and `AgentResult`
-- deterministic planner, searcher, reader, writer, critic, red, and blue roles
-- mock search results without real network access
-- markdown report generation and rule-based revision
-- a lightweight DAG task graph and sequential executor
-- in-memory execution traces
-- shared memory for intermediate artifacts
-- deterministic single-round red/blue review and revision
-- local ResearchBench-mini style evaluation cases and rule metrics
-- optional OpenAI-compatible LLM client with deterministic fallback
-- optional standard-library web search and webpage fetch with mock fallback
-- provider-based search registry with deterministic mock fallback
-- robust web fetcher abstraction with lightweight HTML title/main text extraction
-- JSON checkpoint/resume for DAG runs
-- deterministic rule-based dynamic replan for failed or insufficient DAG runs
-- local SQLite vector memory for evidence and node artifacts
-- local context compression for citation-preserving evidence selection
-- lightweight evidence spans, citation IDs, citation markers, and citation validation
-- optional asyncio DAG executor with max concurrency, timeout, and async traces
-- optional iterative rule-based Red/Blue review loop with structured convergence and oscillation detection
-- ResearchBench-mini Plus local benchmark with expected evidence/citation/section/keyword configuration
-- rule + optional judge composite scoring and before/after comparison summaries
-- optional bootstrap confidence intervals, paired delta confidence intervals, and paired Cohen's d effect size summaries
-- optional SQLite run-level persistence for debugging and replay
-- optional LLM-as-Judge mini evaluation with deterministic mock/fallback support
+- `PlannerAgent` creates sub-questions, search queries, and expected report sections.
+- `SearcherAgent` gathers candidate search results.
+- `ReaderAgent` converts sources into grounded findings with citation IDs.
+- `WriterAgent` drafts the initial Markdown report.
+- `CriticAgent` checks report structure, references, and citation grounding.
+- `RedAgent` turns quality problems into structured review issues.
+- `BlueAgent` revises the draft and produces the final report.
 
-This phase does not include JavaScript-rendered page extraction, semantic evidence verification, distributed execution, multi-judge voting, p-values, t-tests, or external benchmark downloads.
+The default mode is deterministic and local. It can run without external API keys.
 
-## Directory Structure
+### Features
+
+- Multi-agent research pipeline
+- DAG-style task orchestration
+- Markdown report generation
+- Initial draft vs final report comparison
+- Citation grounding and validation
+- Red/Blue review and revision flow
+- Local tests and evaluation utilities
+- Browser-based visual report workbench
+- Optional OpenAI-compatible LLM configuration
+- Optional web search provider configuration
+
+### Project Structure
 
 ```text
-agents/        Agent roles and shared agent interface
-core/          Dataclass schemas
-orchestrator/  DAG graph, executor, trace, and pipeline runner
-memory/        In-memory SharedMemory
-evaluation/    JSONL cases, metrics, and eval runner
-search/        Search provider abstractions and fallback registry
-docs/          Architecture, phase docs, demo guide, and interview notes
-tests/         Unit tests for all implemented phases
-examples/      Demo question examples
+agents/          Agent roles: planner, searcher, reader, writer, critic, red, blue
+compression/     Context compression helpers
+core/            Dataclass schemas and configuration
+evaluation/      Local evaluation utilities
+examples/        Example inputs
+memory/          Shared memory and optional vector memory helpers
+orchestrator/    DAG graph, executor, checkpoint, and pipeline runner
+prompts/         Prompt templates
+search/          Search provider abstractions
+tests/           Unit tests
+tools/           Citation and fetch/search tools
+main.py          CLI demo entry
+report_workbench.py  Browser report workbench
 ```
 
-## Quick Start
+### Quick Start
 
-No external packages are required for the current phase.
-
-## Visual Report Workbench
-
-This repository now includes a small browser-based report workbench for interview and demo use. It runs the real DeepResearch pipeline and shows the final report, the initial draft, review diff, findings, citation validation, and the contribution of each agent step.
-
-```bash
+```powershell
+cd "F:\All projects\deep-research-agent"
+python -m unittest tests.test_report_workbench
 python report_workbench.py
 ```
 
-Then open:
+Open:
 
 ```text
 http://127.0.0.1:18181
 ```
 
-The workbench calls `POST /api/research` and returns:
+Enter a research question and click `Run Report`.
 
-- `finalReportMarkdown`
-- `initialReportMarkdown`
-- `reportDiffSummary`
-- `stepImpacts`
-- `findings`
-- `citationValidation`
-- `memoryTimeline`
-- `executionTrace`
+### Visual Report Workbench
 
-For PowerShell:
+The browser workbench shows more than a simple test result. It displays:
 
-```powershell
-.\run_workbench.ps1
+- Final report
+- Initial draft
+- Review diff
+- Pipeline impact for every agent step
+- Findings and citations
+- Citation validation output
+
+API endpoints:
+
+```text
+GET  /api/health
+POST /api/research
 ```
 
-To verify the workbench payload:
+Example request:
 
-```bash
+```json
+{
+  "question": "How should teams evaluate agentic research tools?"
+}
+```
+
+### CLI Demo
+
+```powershell
+python main.py
+```
+
+Optional Red/Blue loop:
+
+```powershell
+python main.py --red-blue-loop
+```
+
+### Tests
+
+Run the focused workbench test:
+
+```powershell
 python -m unittest tests.test_report_workbench
 ```
 
-## Run Tests
+Run all tests:
 
-```bash
+```powershell
 python -m unittest discover -s tests
 ```
 
-## Run Demo
+### Configuration
 
-```bash
-python main.py
-```
-
-Expected output:
-
-Markdown research report generated by the configured pipeline, followed by LLM/search mode, citation validation, Critic, Red/Blue, and SharedMemory summaries. By default this uses mock search and mock fetch.
-
-## Optional LLM Mode
-
-By default the project uses `MockLLMClient`. To try an OpenAI-compatible endpoint, set environment variables or put them in a local `.env` file:
-
-```bash
-set DEEP_RESEARCH_USE_LLM=1
-set DEEP_RESEARCH_LLM_MODEL=your-model-name
-set DEEP_RESEARCH_LLM_API_KEY=your-api-key
-set DEEP_RESEARCH_LLM_BASE_URL=https://api.openai.com/v1
-```
-
-If configuration is incomplete or an agent cannot use the LLM output safely, the system falls back to deterministic local logic.
-
-`main.py` loads `.env` explicitly. Unit tests and library calls do not load `.env` unless requested, so local secrets do not affect reproducible tests.
-
-## Optional Web Search Mode
-
-By default the project uses deterministic mock search and mock web fetching. To try standard-library DuckDuckGo HTML search and HTTP fetching, set:
-
-```bash
-set DEEP_RESEARCH_USE_WEB_SEARCH=1
-set DEEP_RESEARCH_SEARCH_PROVIDER=duckduckgo_html
-set DEEP_RESEARCH_SEARCH_MAX_RESULTS=5
-set DEEP_RESEARCH_SEARCH_TIMEOUT_SECONDS=15
-```
-
-If real search or fetch fails, the pipeline falls back to mock search results or snippets.
-
-Phase 16 also supports provider-based search. By default the provider order is `mock`. To try provider fallback:
-
-```bash
-set DEEP_RESEARCH_ENABLE_REAL_SEARCH=1
-set DEEP_RESEARCH_SEARCH_PROVIDER_ORDER=duckduckgo_html,mock
-```
-
-Optional API-provider keys can be configured with `DEEP_RESEARCH_BRAVE_API_KEY`, `DEEP_RESEARCH_SERPAPI_API_KEY`, or `DEEP_RESEARCH_TAVILY_API_KEY`, but their Phase 16 implementations are safe interface skeletons, not production integrations.
-
-Phase 17 adds `MockWebFetcher` and `HTTPWebFetcher`. `HTTPWebFetcher` records timeout/retry/content-type/error metadata and extracts lightweight HTML title/main text. It does not render JavaScript pages and does not guarantee production-grade content extraction.
-
-## Optional Async DAG Mode
-
-By default the project uses the synchronous `DAGExecutor`. To run the demo through `AsyncDAGExecutor`, set:
-
-```bash
-set DEEP_RESEARCH_USE_ASYNC_DAG=1
-set DEEP_RESEARCH_DAG_MAX_CONCURRENCY=3
-set DEEP_RESEARCH_DAG_TASK_TIMEOUT_SECONDS=30
-```
-
-The async executor supports dependency-aware scheduling, sync and async handlers, max concurrency, timeout, and failure propagation.
-
-## Optional Iterative Red-Blue Mode
-
-By default the project uses the original single-round Red/Blue review. To enable bounded iterative review:
-
-```bash
-set DEEP_RESEARCH_USE_RED_BLUE_LOOP=1
-set DEEP_RESEARCH_RED_BLUE_MAX_ROUNDS=3
-set DEEP_RESEARCH_RED_BLUE_NO_IMPROVEMENT_ROUNDS=2
-set DEEP_RESEARCH_RED_BLUE_OSCILLATION_DETECTION=true
-```
-
-The loop stops on Red pass, max rounds, no improvement, issue/report oscillation, Blue unable to fix, or agent failure. Detection is deterministic and rule-based, not statistical evaluation or multi-judge voting.
-
-## Optional Run Persistence
-
-By default runs are not saved. To persist completed pipeline outputs to SQLite:
+Copy the example environment file if you want local configuration:
 
 ```powershell
-$env:DEEP_RESEARCH_SAVE_RUN="1"
-$env:DEEP_RESEARCH_RUN_STORE_PATH="runs/deep_research_runs.sqlite3"
-python main.py
+Copy-Item .env.example .env
 ```
 
-This stores run-level artifacts for debugging. It is not vector memory, embedding retrieval, checkpoint/resume, or long-term user memory.
+Do not commit `.env`.
 
-## Checkpoint / Resume
+The default local mode does not require an API key.
 
-`main.py` saves DAG checkpoints by default under:
+Optional LLM mode:
+
+```powershell
+$env:DEEP_RESEARCH_USE_LLM="1"
+$env:DEEP_RESEARCH_LLM_MODEL="your-model-name"
+$env:DEEP_RESEARCH_LLM_API_KEY="your-api-key"
+$env:DEEP_RESEARCH_LLM_BASE_URL="https://api.openai.com/v1"
+```
+
+### Docker
+
+Build:
+
+```powershell
+docker build -t deep-research-agent .
+```
+
+Run:
+
+```powershell
+docker run --rm -p 18181:18181 deep-research-agent
+```
+
+Open:
 
 ```text
-runs/checkpoints/
+http://127.0.0.1:18181
 ```
 
-Run the demo normally and note the printed `Run ID`, then resume with:
+### Current Scope
 
-```bash
-python main.py --resume <run_id>
+This is a local research workflow prototype. It is not a production SaaS system.
+
+Current boundaries:
+
+- No authentication system
+- No hosted deployment
+- No production monitoring
+- Default search/fetch behavior is deterministic and local unless configured otherwise
+- Optional LLM and real search integrations require your own environment variables
+
+---
+
+## 中文
+
+DeepResearchAgent 是一个本地多 Agent 研究工作流项目，可以把一个研究问题转换成结构化 Markdown 报告。
+
+它展示了如何把研究任务拆给多个不同职责的 Agent：
+
+- `PlannerAgent`：生成子问题、搜索词和预期报告章节。
+- `SearcherAgent`：生成或获取候选搜索结果。
+- `ReaderAgent`：把资料来源转换成带 citation ID 的 findings。
+- `WriterAgent`：生成第一版 Markdown 报告。
+- `CriticAgent`：检查报告结构、References 和 citation grounding。
+- `RedAgent`：把质量问题转换成结构化 review issue。
+- `BlueAgent`：根据 review issue 修订初稿，生成最终报告。
+
+项目默认是本地确定性模式，不需要外部 API Key 也能运行。
+
+### 功能特点
+
+- 多 Agent 研究工作流
+- DAG 风格任务编排
+- Markdown 报告生成
+- 初稿和最终报告对比
+- Citation grounding 和引用校验
+- Red/Blue 审查与修订链路
+- 本地测试和评测工具
+- 浏览器可视化报告工作台
+- 可选 OpenAI-compatible LLM 配置
+- 可选 Web Search Provider 配置
+
+### 项目结构
+
+```text
+agents/          各类 Agent：planner、searcher、reader、writer、critic、red、blue
+compression/     上下文压缩工具
+core/            dataclass 数据模型和配置
+evaluation/      本地评测工具
+examples/        示例输入
+memory/          共享记忆和可选向量记忆
+orchestrator/    DAG、executor、checkpoint、pipeline runner
+prompts/         prompt 模板
+search/          搜索 provider 抽象
+tests/           单元测试
+tools/           citation、fetch/search 工具
+main.py          CLI demo 入口
+report_workbench.py  浏览器报告工作台
 ```
 
-Resume skips nodes that already completed successfully with checkpointed output. Failed, pending, skipped, missing, or incomplete nodes are re-executed. This is not dynamic re-planning, vector memory, cross-run semantic memory, or context compression.
-
-## Dynamic Replan
-
-The DAG executor can optionally run a deterministic `RuleBasedReplanPolicy`. `main.py` enables it for the demo. It can inject remedial nodes for failed search/reader/fetch/citation situations, record replan metadata, and use force synthesis when replan attempts are exhausted.
-
-This is not a complex LLM planner. It does not use vector memory or context compression.
-
-## Run Evaluation
-
-```bash
-python -m evaluation.run_eval
-```
-
-This runs local ResearchBench-mini style JSONL cases and prints rule metric averages.
-
-ResearchBench-mini Plus can be run explicitly:
-
-```bash
-python -m evaluation.run_eval --bench plus
-```
-
-Optional report files:
-
-```bash
-python -m evaluation.run_eval --bench plus --output-json evaluation/results/latest_eval.json --output-md evaluation/results/latest_eval.md
-```
-
-Evaluation comparison is descriptive and deterministic:
-
-```bash
-python -m evaluation.run_eval --compare evaluation/results/baseline.json evaluation/results/candidate.json
-```
-
-Statistical comparison is opt-in and dependency-free:
-
-```bash
-python -m evaluation.run_eval --compare evaluation/results/baseline.json evaluation/results/candidate.json --stats
-```
-
-Red-Blue comparison can also include statistical summaries:
-
-```bash
-python -m evaluation.run_eval --bench plus --compare-red-blue --stats
-```
-
-Phase 24 reports bootstrap confidence intervals and paired Cohen's d effect sizes. It does not report p-values or t-tests.
-
-## Optional LLM-as-Judge Evaluation
-
-By default LLM judge is disabled and rule metrics are unchanged. To enable judge evaluation:
+### 快速开始
 
 ```powershell
-$env:DEEP_RESEARCH_USE_LLM_JUDGE="1"
-python -m evaluation.run_eval
+cd "F:\All projects\deep-research-agent"
+python -m unittest tests.test_report_workbench
+python report_workbench.py
 ```
 
-To force deterministic mock judge mode:
+浏览器打开：
+
+```text
+http://127.0.0.1:18181
+```
+
+输入研究问题，点击 `Run Report`。
+
+### 可视化报告工作台
+
+这个页面不是只显示 `test passed`，而是会展示完整研究链路：
+
+- 最终报告
+- Writer 初稿
+- 初稿和最终报告 diff
+- 每个 Agent 对最终报告的贡献
+- Findings 和 citations
+- Citation validation 结果
+
+接口：
+
+```text
+GET  /api/health
+POST /api/research
+```
+
+请求示例：
+
+```json
+{
+  "question": "How should teams evaluate agentic research tools?"
+}
+```
+
+### 命令行 Demo
 
 ```powershell
-$env:DEEP_RESEARCH_USE_LLM_JUDGE="1"
-$env:DEEP_RESEARCH_LLM_JUDGE_USE_MOCK="1"
-python -m evaluation.run_eval
+python main.py
 ```
 
-This is not multi-model judging, human annotation, or full ResearchBench.
+可选 Red/Blue 多轮审查：
 
-## Current Limitations
+```powershell
+python main.py --red-blue-loop
+```
 
-- real web search and webpage fetch are optional and lightweight, not production-grade
-- provider-based search has fallback and trace metadata, but not production-grade ranking
-- robust fetch handles HTML/plain text and failure metadata, but not JavaScript rendering
-- checkpoint/resume skips completed DAG nodes but does not replan the graph
-- dynamic replan is rule-based and bounded, not an LLM planning system
-- citation grounding is rule-based and not semantic fact verification
-- async DAG execution is local asyncio scheduling, not distributed execution
-- vector memory and context compression are local deterministic utilities, not external vector databases or real embedding APIs
-- LLM-as-Judge is optional mini-evaluation, not multi-judge or external fact verification
-- Red/Blue convergence detection is deterministic, not a statistical significance test
-- ResearchBench-mini Plus is a local deterministic benchmark, not a large external benchmark
-- statistical evaluation is limited to bootstrap intervals and paired effect sizes; it does not implement p-values or t-tests
-- Red/Blue review is deterministic; iterative mode is bounded and rule-based
-- SQLite persistence is run-level storage, not semantic long-term memory
+### 测试
 
-## Planned Roadmap
+运行报告工作台测试：
 
-- Phase 0: Project skeleton
-- Phase 1: Minimal deep research pipeline
-- Phase 2: DAG orchestrator
-- Phase 3: Multi-agent role split
-- Phase 4: Shared memory
-- Phase 5: Red-Blue review
-- Phase 6: Evaluation
-- Phase 7: Documentation and interview materials
-- Phase 8: Final acceptance, consistency check, and packaging
-- Phase 9: Optional LLM client and prompt system
-- Phase 10: Optional real web search and webpage fetch
-- Phase 11: Evidence grounding and citation validation
-- Phase 12: Optional async DAG executor
-- Phase 13: Optional iterative Red-Blue loop
-- Phase 14: Optional SQLite persistent run store
-- Phase 15: Optional LLM-as-Judge mini evaluation
-- Phase 16: Reliable search provider registry and fallback
-- Phase 17: Robust web fetch and lightweight content extraction
-- Phase 18: Checkpoint/resume for DAG runs
-- Phase 19: Deterministic dynamic replan for failed or insufficient DAG runs
-- Phase 20: Vector memory / evidence memory store
-- Phase 21: Context compression
-- Phase 22: Red-Blue convergence / oscillation detection
-- Phase 23: ResearchBench-mini Plus
-- Phase 24: Statistical evaluation
+```powershell
+python -m unittest tests.test_report_workbench
+```
 
-Future work can add stronger LLM planning, JavaScript-rendered page support, semantic evidence verification, better source parsing, and stronger evaluation.
+运行全部测试：
+
+```powershell
+python -m unittest discover -s tests
+```
+
+### 配置
+
+如果需要本地配置，可以复制环境变量模板：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+不要提交 `.env`。
+
+默认本地模式不需要 API Key。
+
+可选 LLM 模式：
+
+```powershell
+$env:DEEP_RESEARCH_USE_LLM="1"
+$env:DEEP_RESEARCH_LLM_MODEL="your-model-name"
+$env:DEEP_RESEARCH_LLM_API_KEY="your-api-key"
+$env:DEEP_RESEARCH_LLM_BASE_URL="https://api.openai.com/v1"
+```
+
+### Docker
+
+构建：
+
+```powershell
+docker build -t deep-research-agent .
+```
+
+运行：
+
+```powershell
+docker run --rm -p 18181:18181 deep-research-agent
+```
+
+浏览器打开：
+
+```text
+http://127.0.0.1:18181
+```
+
+### 当前边界
+
+这是一个本地研究工作流 prototype，不是生产级 SaaS 系统。
+
+当前边界：
+
+- 没有鉴权系统
+- 没有线上托管部署
+- 没有生产级监控
+- 默认搜索和抓取是本地确定性行为，除非手动配置真实 provider
+- 可选 LLM 和真实搜索集成需要你自己的环境变量
