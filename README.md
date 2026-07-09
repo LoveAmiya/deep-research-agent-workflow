@@ -6,77 +6,70 @@
 
 ## English
 
-DeepResearchAgent is a local multi-agent research workflow that turns a research question into a structured Markdown report.
+DeepResearchAgent is a local-first multi-agent research pipeline that turns open-ended questions into structured Markdown reports with visible planning, evidence extraction, critique, and revision artifacts.
 
-It demonstrates how a research task can be split across specialized agents:
+The workflow coordinates specialized agents for planning, retrieval, reading, drafting, review, and refinement. A browser workbench makes the full report-generation process inspectable, including the initial draft, final report, agent contributions, citations, and validation output.
 
-- `PlannerAgent` creates sub-questions, search queries, and expected report sections.
-- `SearcherAgent` gathers candidate search results.
-- `ReaderAgent` converts sources into grounded findings with citation IDs.
-- `WriterAgent` drafts the initial Markdown report.
-- `CriticAgent` checks report structure, references, and citation grounding.
-- `RedAgent` turns quality problems into structured review issues.
-- `BlueAgent` revises the draft and produces the final report.
+### Highlights
 
-The default mode is deterministic and local. It can run without external API keys.
-
-### Features
-
-- Multi-agent research pipeline
-- DAG-style task orchestration
-- Markdown report generation
-- Initial draft vs final report comparison
-- Citation grounding and validation
-- Red/Blue review and revision flow
-- Local tests and evaluation utilities
-- Browser-based visual report workbench
+- Multi-agent research workflow
+- Planner, searcher, reader, writer, critic, red-team, and blue-team roles
+- DAG-style orchestration with checkpoint-friendly execution
+- Structured Markdown report generation
+- Initial-draft and final-report comparison
+- Citation IDs, references, and grounding validation
+- Browser report workbench with step-by-step pipeline visibility
+- Deterministic local mode that runs without API keys
 - Optional OpenAI-compatible LLM configuration
-- Optional web search provider configuration
+- Optional external search provider configuration
+- Docker support
 
-### Project Structure
+### Repository Layout
 
 ```text
-agents/          Agent roles: planner, searcher, reader, writer, critic, red, blue
-compression/     Context compression helpers
-core/            Dataclass schemas and configuration
-evaluation/      Local evaluation utilities
-examples/        Example inputs
-memory/          Shared memory and optional vector memory helpers
-orchestrator/    DAG graph, executor, checkpoint, and pipeline runner
-prompts/         Prompt templates
-search/          Search provider abstractions
-tests/           Unit tests
-tools/           Citation and fetch/search tools
-main.py          CLI demo entry
-report_workbench.py  Browser report workbench
+agents/               Agent role implementations
+compression/          Context compression utilities
+core/                 Dataclass schemas and configuration
+evaluation/           Local evaluation utilities
+examples/             Example research inputs
+memory/               Shared memory and optional vector-memory helpers
+orchestrator/         DAG graph, executor, checkpoints, and pipeline runner
+prompts/              Prompt templates
+search/               Search provider abstractions
+tests/                Unit tests
+tools/                Citation and fetch/search utilities
+main.py               CLI entry point
+report_workbench.py   Browser report workbench
 ```
 
-### Quick Start
+### Getting Started
 
 ```powershell
-cd "F:\All projects\deep-research-agent"
+git clone https://github.com/LoveAmiya/deep-research-agent-workflow.git
+cd deep-research-agent-workflow
 python -m unittest tests.test_report_workbench
 python report_workbench.py
 ```
 
-Open:
+Open the workbench at:
 
 ```text
 http://127.0.0.1:18181
 ```
 
-Enter a research question and click `Run Report`.
+Enter a research question and run the pipeline from the browser.
 
-### Visual Report Workbench
+### Browser Workbench
 
-The browser workbench shows more than a simple test result. It displays:
+The workbench exposes the research process as inspectable artifacts:
 
 - Final report
 - Initial draft
-- Review diff
-- Pipeline impact for every agent step
-- Findings and citations
-- Citation validation output
+- Draft-to-final revision diff
+- Per-agent pipeline impact
+- Findings and citation IDs
+- Citation validation result
+- API response payload for debugging and integration
 
 API endpoints:
 
@@ -93,13 +86,13 @@ Example request:
 }
 ```
 
-### CLI Demo
+### CLI Usage
 
 ```powershell
 python main.py
 ```
 
-Optional Red/Blue loop:
+Run with the Red/Blue review loop:
 
 ```powershell
 python main.py --red-blue-loop
@@ -107,13 +100,13 @@ python main.py --red-blue-loop
 
 ### Tests
 
-Run the focused workbench test:
+Run the workbench test:
 
 ```powershell
 python -m unittest tests.test_report_workbench
 ```
 
-Run all tests:
+Run the full test suite:
 
 ```powershell
 python -m unittest discover -s tests
@@ -121,17 +114,13 @@ python -m unittest discover -s tests
 
 ### Configuration
 
-Copy the example environment file if you want local configuration:
+Create a local environment file from the template when external providers are needed:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Do not commit `.env`.
-
-The default local mode does not require an API key.
-
-Optional LLM mode:
+The default local workflow runs without API keys. Optional LLM mode can be enabled with:
 
 ```powershell
 $env:DEEP_RESEARCH_USE_LLM="1"
@@ -140,17 +129,12 @@ $env:DEEP_RESEARCH_LLM_API_KEY="your-api-key"
 $env:DEEP_RESEARCH_LLM_BASE_URL="https://api.openai.com/v1"
 ```
 
-### Docker
+Keep `.env` out of version control.
 
-Build:
+### Docker
 
 ```powershell
 docker build -t deep-research-agent .
-```
-
-Run:
-
-```powershell
 docker run --rm -p 18181:18181 deep-research-agent
 ```
 
@@ -160,71 +144,65 @@ Open:
 http://127.0.0.1:18181
 ```
 
-### Current Scope
+### Pipeline Overview
 
-This is a local research workflow prototype. It is not a production SaaS system.
-
-Current boundaries:
-
-- No authentication system
-- No hosted deployment
-- No production monitoring
-- Default search/fetch behavior is deterministic and local unless configured otherwise
-- Optional LLM and real search integrations require your own environment variables
+```text
+Question
+  -> PlannerAgent
+  -> SearcherAgent
+  -> ReaderAgent
+  -> WriterAgent
+  -> CriticAgent
+  -> RedAgent
+  -> BlueAgent
+  -> Final Markdown Report
+```
 
 ---
 
 ## 中文
 
-DeepResearchAgent 是一个本地多 Agent 研究工作流项目，可以把一个研究问题转换成结构化 Markdown 报告。
+DeepResearchAgent 是一个本地优先的多 Agent 研究工作流，可以把开放式研究问题转换成结构化 Markdown 报告，并展示规划、证据提取、审查和修订过程。
 
-它展示了如何把研究任务拆给多个不同职责的 Agent：
+工作流由多个专门 Agent 协作完成，包括规划、检索、阅读、撰写、审查和修订。浏览器工作台会展示报告生成过程中的关键中间产物，包括初稿、最终报告、Agent 贡献、引用信息和校验结果。
 
-- `PlannerAgent`：生成子问题、搜索词和预期报告章节。
-- `SearcherAgent`：生成或获取候选搜索结果。
-- `ReaderAgent`：把资料来源转换成带 citation ID 的 findings。
-- `WriterAgent`：生成第一版 Markdown 报告。
-- `CriticAgent`：检查报告结构、References 和 citation grounding。
-- `RedAgent`：把质量问题转换成结构化 review issue。
-- `BlueAgent`：根据 review issue 修订初稿，生成最终报告。
-
-项目默认是本地确定性模式，不需要外部 API Key 也能运行。
-
-### 功能特点
+### 项目亮点
 
 - 多 Agent 研究工作流
-- DAG 风格任务编排
-- Markdown 报告生成
-- 初稿和最终报告对比
-- Citation grounding 和引用校验
-- Red/Blue 审查与修订链路
-- 本地测试和评测工具
-- 浏览器可视化报告工作台
+- 包含 planner、searcher、reader、writer、critic、red-team、blue-team 等角色
+- DAG 风格任务编排，支持 checkpoint 友好的执行方式
+- 结构化 Markdown 报告生成
+- 初稿与最终报告对比
+- Citation ID、References 和引用校验
+- 浏览器报告工作台，可查看每一步产物
+- 默认本地确定性模式，不需要 API Key
 - 可选 OpenAI-compatible LLM 配置
-- 可选 Web Search Provider 配置
+- 可选外部搜索 provider 配置
+- 支持 Docker 运行
 
 ### 项目结构
 
 ```text
-agents/          各类 Agent：planner、searcher、reader、writer、critic、red、blue
-compression/     上下文压缩工具
-core/            dataclass 数据模型和配置
-evaluation/      本地评测工具
-examples/        示例输入
-memory/          共享记忆和可选向量记忆
-orchestrator/    DAG、executor、checkpoint、pipeline runner
-prompts/         prompt 模板
-search/          搜索 provider 抽象
-tests/           单元测试
-tools/           citation、fetch/search 工具
-main.py          CLI demo 入口
-report_workbench.py  浏览器报告工作台
+agents/               Agent 角色实现
+compression/          上下文压缩工具
+core/                 Dataclass 数据结构和配置
+evaluation/           本地评测工具
+examples/             示例研究输入
+memory/               共享记忆和可选向量记忆工具
+orchestrator/         DAG、执行器、checkpoint 和 pipeline runner
+prompts/              Prompt 模板
+search/               搜索 provider 抽象
+tests/                单元测试
+tools/                Citation 和 fetch/search 工具
+main.py               命令行入口
+report_workbench.py   浏览器报告工作台
 ```
 
 ### 快速开始
 
 ```powershell
-cd "F:\All projects\deep-research-agent"
+git clone https://github.com/LoveAmiya/deep-research-agent-workflow.git
+cd deep-research-agent-workflow
 python -m unittest tests.test_report_workbench
 python report_workbench.py
 ```
@@ -235,18 +213,19 @@ python report_workbench.py
 http://127.0.0.1:18181
 ```
 
-输入研究问题，点击 `Run Report`。
+输入研究问题后，可以直接在页面中运行完整 pipeline。
 
-### 可视化报告工作台
+### 浏览器工作台
 
-这个页面不是只显示 `test passed`，而是会展示完整研究链路：
+工作台会把研究流程拆成可查看的中间产物：
 
 - 最终报告
-- Writer 初稿
-- 初稿和最终报告 diff
-- 每个 Agent 对最终报告的贡献
-- Findings 和 citations
-- Citation validation 结果
+- 初始草稿
+- 初稿到最终稿的修订 diff
+- 每个 Agent 对 pipeline 的贡献
+- Findings 和 Citation ID
+- 引用校验结果
+- 便于调试和集成的 API 响应
 
 接口：
 
@@ -263,13 +242,13 @@ POST /api/research
 }
 ```
 
-### 命令行 Demo
+### 命令行使用
 
 ```powershell
 python main.py
 ```
 
-可选 Red/Blue 多轮审查：
+启用 Red/Blue 审查修订链路：
 
 ```powershell
 python main.py --red-blue-loop
@@ -277,13 +256,13 @@ python main.py --red-blue-loop
 
 ### 测试
 
-运行报告工作台测试：
+运行工作台测试：
 
 ```powershell
 python -m unittest tests.test_report_workbench
 ```
 
-运行全部测试：
+运行完整测试：
 
 ```powershell
 python -m unittest discover -s tests
@@ -291,17 +270,13 @@ python -m unittest discover -s tests
 
 ### 配置
 
-如果需要本地配置，可以复制环境变量模板：
+如需接入外部 provider，可以从模板创建本地环境变量文件：
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-不要提交 `.env`。
-
-默认本地模式不需要 API Key。
-
-可选 LLM 模式：
+默认本地工作流不需要 API Key。可选 LLM 模式可以通过以下环境变量启用：
 
 ```powershell
 $env:DEEP_RESEARCH_USE_LLM="1"
@@ -310,17 +285,12 @@ $env:DEEP_RESEARCH_LLM_API_KEY="your-api-key"
 $env:DEEP_RESEARCH_LLM_BASE_URL="https://api.openai.com/v1"
 ```
 
-### Docker
+不要把 `.env` 提交到版本库。
 
-构建：
+### Docker
 
 ```powershell
 docker build -t deep-research-agent .
-```
-
-运行：
-
-```powershell
 docker run --rm -p 18181:18181 deep-research-agent
 ```
 
@@ -330,14 +300,16 @@ docker run --rm -p 18181:18181 deep-research-agent
 http://127.0.0.1:18181
 ```
 
-### 当前边界
+### Pipeline 概览
 
-这是一个本地研究工作流 prototype，不是生产级 SaaS 系统。
-
-当前边界：
-
-- 没有鉴权系统
-- 没有线上托管部署
-- 没有生产级监控
-- 默认搜索和抓取是本地确定性行为，除非手动配置真实 provider
-- 可选 LLM 和真实搜索集成需要你自己的环境变量
+```text
+Question
+  -> PlannerAgent
+  -> SearcherAgent
+  -> ReaderAgent
+  -> WriterAgent
+  -> CriticAgent
+  -> RedAgent
+  -> BlueAgent
+  -> Final Markdown Report
+```
