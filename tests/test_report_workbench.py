@@ -1,6 +1,29 @@
 import unittest
+from types import SimpleNamespace
 
 from report_workbench import TASK_ORDER, build_report_workbench_payload
+
+
+class ScriptedChineseLLMClient:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def generate(self, messages, temperature=0.2):
+        self.calls.append(messages[-1].content)
+        responses = [
+            '{"objective":"研究 Agent 工具评估方法。","subQuestions":["如何定义质量？","如何评估可追踪性？"],"searchQueries":["agentic research tools evaluation","RAG evaluation"],"expectedSections":["摘要","Key Findings（关键发现）","行动建议","References（参考来源）"]}',
+            '{"results":[{"title":"Agent 评估资料","url":"https://example.com/agent-eval","snippet":"评估需要覆盖任务成功率、证据质量和过程可追踪性。","whyUseful":"提供评估维度。"}]}',
+            '{"findings":[{"claim":"Agentic research tools 需要同时评估结果质量和过程可追踪性。","evidence":"评估需要覆盖任务成功率、证据质量和过程可追踪性。","sourceTitle":"Agent 评估资料","sourceUrl":"https://example.com/agent-eval","confidence":0.85}]}',
+            '{"markdown":"# Research Report: 如何评估 Agentic Research Tools\\n\\n## 摘要\\n\\n这是一份中文初稿。\\n\\n## Key Findings（关键发现）\\n\\n- 需要同时评估结果质量和过程可追踪性。[C1]\\n\\n## 深入分析\\n\\nAgent（智能体）不仅要回答正确，还要展示计划、证据和修改过程。\\n\\n## 行动建议\\n\\n- 建立人工样例集。\\n\\n## References（参考来源）\\n\\n- [C1] Agent 评估资料 https://example.com/agent-eval"}',
+            '{"passed":false,"summary":"初稿可用，但建议补充评估指标。","checks":{"has_title":true,"has_references":true},"issues":["行动建议还可以更具体。"]}',
+            '{"passed":false,"summary":"发现 1 个可修订问题。","issues":[{"issueId":"R1-1","severity":"medium","message":"行动建议缺少可执行指标。","evidence":"只说建立样例集。","suggestion":"补充 success rate、citation accuracy 和 trace coverage。"}]}',
+            '{"revisedReportMarkdown":"# Research Report: 如何评估 Agentic Research Tools\\n\\n## 摘要\\n\\n这是一份中文最终版报告，覆盖结果质量、证据质量和过程可追踪性。\\n\\n## Key Findings（关键发现）\\n\\n- 需要同时评估结果质量和过程可追踪性。[C1]\\n\\n## 深入分析\\n\\nAgent（智能体）评估不能只看最终答案，还要看 Planner、Reader、Writer、Red/Blue 修改链路是否可解释。\\n\\n## 行动建议\\n\\n- 建立人工样例集。\\n- 记录 success rate（任务成功率）、citation accuracy（引用准确率）和 trace coverage（过程覆盖率）。\\n\\n## References（参考来源）\\n\\n- [C1] Agent 评估资料 https://example.com/agent-eval","fixedIssueIds":["R1-1"],"remainingIssueIds":[],"revisionNotes":["补充了可执行指标。"]}',
+        ]
+        return SimpleNamespace(
+            content=responses[len(self.calls) - 1],
+            model="scripted-chinese-llm",
+            usage={"prompt_messages": len(messages), "temperature": temperature},
+        )
 
 
 class TestReportWorkbench(unittest.TestCase):
@@ -25,10 +48,34 @@ class TestReportWorkbench(unittest.TestCase):
         steps = {step["taskId"]: step for step in payload["stepImpacts"]}
 
         self.assertGreater(steps["writer_task"]["metrics"]["Characters"], 0)
-        self.assertIn("初稿", steps["writer_task"]["impactOnFinalReport"])
+        self.assertIn("第一版", steps["writer_task"]["impactOnFinalReport"])
         self.assertIn("最终报告", steps["blue_revision_task"]["impactOnFinalReport"])
         self.assertIn("summary", payload["reportDiffSummary"])
         self.assertIn("passed", payload["citationValidation"])
+
+    def test_payload_uses_llm_first_and_streams_status_events(self) -> None:
+        client = ScriptedChineseLLMClient()
+        events = []
+
+        payload = build_report_workbench_payload(
+            "如何评估 Agentic Research Tools？",
+            llm_client=client,
+            red_blue_rounds=1,
+            event_sink=lambda event_type, data: events.append((event_type, data)),
+        )
+
+        self.assertEqual(len(client.calls), len(TASK_ORDER))
+        self.assertEqual(payload["modelRun"]["fallbackCount"], 0)
+        self.assertIn("中文最终版报告", payload["finalReportMarkdown"])
+        self.assertTrue(all(step["status"] == "done" for step in payload["stepImpacts"]))
+        self.assertTrue(all(step["mode"] == "llm" for step in payload["stepImpacts"]))
+
+        event_types = [event_type for event_type, _ in events]
+        self.assertIn("run_started", event_types)
+        self.assertIn("agent_started", event_types)
+        self.assertIn("agent_done", event_types)
+        self.assertIn("report_delta", event_types)
+        self.assertEqual(event_types[-1], "run_completed")
 
 
 if __name__ == "__main__":

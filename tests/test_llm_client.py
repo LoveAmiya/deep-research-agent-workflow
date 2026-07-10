@@ -1,10 +1,13 @@
 import os
 import unittest
+from io import BytesIO
+from urllib.error import HTTPError
 from unittest.mock import patch
 
 from agents.base_agent import AgentContext
 from agents.planner_agent import PlannerAgent
 from agents.writer_agent import WriterAgent
+from core.config import LLMConfig
 from core.config import load_llm_config_from_env
 from core.llm_client import (
     BaseLLMClient,
@@ -12,6 +15,7 @@ from core.llm_client import (
     LLMMessage,
     LLMResponse,
     MockLLMClient,
+    OpenAICompatibleLLMClient,
     create_llm_client,
 )
 from core.prompt_loader import load_prompt
@@ -22,6 +26,22 @@ from orchestrator.research_pipeline import run_research_pipeline
 class FailingLLMClient(BaseLLMClient):
     def generate(self, messages, temperature=0.2):
         raise LLMClientError("forced failure")
+
+
+class FakeHTTPResponse:
+    def __init__(self, body: dict) -> None:
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        return None
+
+    def read(self) -> bytes:
+        import json
+
+        return json.dumps(self.body).encode("utf-8")
 
 
 class TestLLMClient(unittest.TestCase):
@@ -41,6 +61,25 @@ class TestLLMClient(unittest.TestCase):
         self.assertFalse(config.enabled)
         self.assertEqual(config.provider, "openai_compatible")
 
+    def test_load_llm_config_reads_responses_wire_api(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "DEEP_RESEARCH_USE_LLM": "1",
+                "DEEP_RESEARCH_LLM_WIRE_API": "responses",
+                "DEEP_RESEARCH_LLM_REASONING_EFFORT": "xhigh",
+                "DEEP_RESEARCH_LLM_DISABLE_RESPONSE_STORAGE": "true",
+                "DEEP_RESEARCH_LLM_MAX_OUTPUT_TOKENS": "1800",
+            },
+            clear=True,
+        ):
+            config = load_llm_config_from_env()
+
+        self.assertEqual(config.wire_api, "responses")
+        self.assertEqual(config.reasoning_effort, "xhigh")
+        self.assertTrue(config.disable_response_storage)
+        self.assertEqual(config.max_output_tokens, 1800)
+
     def test_create_llm_client_without_api_key_returns_mock(self) -> None:
         with patch.dict(os.environ, {"DEEP_RESEARCH_USE_LLM": "1"}, clear=True):
             config = load_llm_config_from_env()
@@ -48,6 +87,83 @@ class TestLLMClient(unittest.TestCase):
         client = create_llm_client(config)
 
         self.assertIsInstance(client, MockLLMClient)
+
+    def test_responses_wire_api_posts_to_responses_endpoint(self) -> None:
+        config = LLMConfig(
+            enabled=True,
+            model="gpt-5.5",
+            api_key="test-key",
+            base_url="https://crs.ruinique.com",
+            wire_api="responses",
+            reasoning_effort="xhigh",
+            disable_response_storage=True,
+            max_output_tokens=1800,
+        )
+        captured = {}
+
+        def fake_urlopen(request, timeout):
+            import json
+
+            captured["url"] = request.full_url
+            captured["timeout"] = timeout
+            captured["body"] = json.loads(request.data.decode("utf-8"))
+            captured["user_agent"] = request.headers.get("User-agent")
+            return FakeHTTPResponse(
+                {
+                    "model": "gpt-5.5",
+                    "output_text": "中文模型响应",
+                    "usage": {"input_tokens": 10, "output_tokens": 4},
+                }
+            )
+
+        client = OpenAICompatibleLLMClient(config)
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            response = client.generate(
+                [
+                    LLMMessage(role="system", content="系统指令"),
+                    LLMMessage(role="user", content="你好"),
+                ]
+            )
+
+        self.assertEqual(captured["url"], "https://crs.ruinique.com/responses")
+        self.assertEqual(captured["body"]["model"], "gpt-5.5")
+        self.assertEqual(captured["body"]["instructions"], "系统指令")
+        self.assertEqual(captured["body"]["input"], "USER:\n你好")
+        self.assertEqual(captured["body"]["reasoning"]["effort"], "xhigh")
+        self.assertFalse(captured["body"]["store"])
+        self.assertEqual(captured["body"]["max_output_tokens"], 1800)
+        self.assertEqual(captured["user_agent"], "OpenAI/Python 1.0.0")
+        self.assertEqual(response.content, "中文模型响应")
+
+    def test_http_error_message_includes_sanitized_response_body(self) -> None:
+        config = LLMConfig(
+            enabled=True,
+            model="gpt-5.5",
+            api_key="sk-test-secret-key",
+            base_url="https://crs.ruinique.com",
+            wire_api="responses",
+        )
+        body = b'{"error":{"message":"bad key sk-test-secret-key","type":"invalid_request_error"}}'
+
+        def fake_urlopen(request, timeout):
+            raise HTTPError(
+                url=request.full_url,
+                code=400,
+                msg="Bad Request",
+                hdrs={},
+                fp=BytesIO(body),
+            )
+
+        client = OpenAICompatibleLLMClient(config)
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with self.assertRaises(LLMClientError) as error:
+                client.generate([LLMMessage(role="user", content="你好")])
+
+        message = str(error.exception)
+        self.assertIn("HTTP 400", message)
+        self.assertIn("invalid_request_error", message)
+        self.assertIn("[redacted-api-key]", message)
+        self.assertNotIn("sk-test-secret-key", message)
 
     def test_prompt_loader_can_load_planner_prompt(self) -> None:
         prompt = load_prompt("planner")

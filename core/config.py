@@ -17,6 +17,11 @@ class LLMConfig:
     model: Optional[str] = None
     api_key: Optional[str] = None
     base_url: str = "https://api.openai.com/v1"
+    wire_api: str = "chat_completions"
+    user_agent: str = "OpenAI/Python 1.0.0"
+    reasoning_effort: Optional[str] = None
+    disable_response_storage: bool = False
+    max_output_tokens: Optional[int] = None
     timeout_seconds: float = 60.0
     enabled: bool = False
 
@@ -99,6 +104,16 @@ def _parse_int_env(name: str, default: int) -> int:
         return default
 
 
+def _parse_optional_int_env(name: str) -> Optional[int]:
+    raw_value = os.getenv(name, "").strip()
+    if not raw_value:
+        return None
+    try:
+        return max(1, int(raw_value))
+    except ValueError:
+        return None
+
+
 def _parse_csv_env(name: str, default: list[str]) -> list[str]:
     raw_value = os.getenv(name, "").strip()
     if not raw_value:
@@ -111,12 +126,18 @@ def load_llm_config_from_env(load_dotenv: bool = False) -> LLMConfig:
     _maybe_load_dotenv(load_dotenv)
     enabled_raw = os.getenv("DEEP_RESEARCH_USE_LLM", "").strip().lower()
     timeout_seconds = _parse_float_env("DEEP_RESEARCH_LLM_TIMEOUT_SECONDS", 60.0)
+    wire_api = os.getenv("DEEP_RESEARCH_LLM_WIRE_API", "chat_completions")
 
     return LLMConfig(
         provider=os.getenv("DEEP_RESEARCH_LLM_PROVIDER", "openai_compatible"),
         model=os.getenv("DEEP_RESEARCH_LLM_MODEL"),
         api_key=os.getenv("DEEP_RESEARCH_LLM_API_KEY"),
         base_url=os.getenv("DEEP_RESEARCH_LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
+        wire_api=wire_api.strip().lower().replace("-", "_"),
+        user_agent=os.getenv("DEEP_RESEARCH_LLM_USER_AGENT", "OpenAI/Python 1.0.0"),
+        reasoning_effort=os.getenv("DEEP_RESEARCH_LLM_REASONING_EFFORT") or None,
+        disable_response_storage=_parse_bool_env("DEEP_RESEARCH_LLM_DISABLE_RESPONSE_STORAGE"),
+        max_output_tokens=_parse_optional_int_env("DEEP_RESEARCH_LLM_MAX_OUTPUT_TOKENS"),
         timeout_seconds=timeout_seconds,
         enabled=enabled_raw in {"1", "true"},
     )
