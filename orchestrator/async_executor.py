@@ -23,6 +23,7 @@ AsyncTaskHandler = Callable[[Dict[str, Any], TaskNode], Any]
 
 @dataclass
 class AsyncExecutionResult:
+    """暴露给调用方、测试和可视化工作台的最终执行状态。"""
     success: bool
     outputs: Dict[str, Any] = field(default_factory=dict)
     states: Dict[str, TaskState] = field(default_factory=dict)
@@ -32,6 +33,11 @@ class AsyncExecutionResult:
 
 
 class AsyncDAGExecutor:
+    """执行具备并发上限、Trace、Checkpoint 与重规划能力的任务 DAG。
+
+    执行器只负责调度，不承载 Agent 业务逻辑。一个 handler 仅在所有声明依赖
+    成功后才能调用，这使数据流明确，也让失败节点能被独立恢复。
+    """
     def __init__(
         self,
         graph: TaskGraph,
@@ -80,6 +86,11 @@ class AsyncDAGExecutor:
         self.replan_exhausted = False
 
     async def execute(self) -> AsyncExecutionResult:
+        """持续调度就绪节点，直到所有节点都进入终态。
+
+        先从兼容 Checkpoint 恢复成功节点；随后同时启动新就绪节点，但通过信号量
+        限制外部 API 压力和 Token 成本。
+        """
         self.graph.validate()
         self._validate_handlers()
 
@@ -92,6 +103,8 @@ class AsyncDAGExecutor:
         running: Dict[str, asyncio.Task] = {}
         semaphore = asyncio.Semaphore(self.max_concurrency)
 
+        # 只恢复已确认成功的节点；失败或缺失的 Checkpoint 必须重新执行，不能让过期的
+        # 部分结果进入最终输出。
         for node in self.graph.topological_sort():
             if self._can_resume_node(node):
                 outputs[node.task_id] = deserialize_checkpoint_output(
@@ -111,6 +124,7 @@ class AsyncDAGExecutor:
                     },
                 )
 
+        # 每轮启动所有依赖已满足的节点，再等待至少一个完成，从而发现新解锁的下游节点。
         while len(completed) < len(self.graph.nodes):
             self._skip_blocked_tasks(states, completed)
             ready_nodes = self._ready_nodes(states, completed, running)
@@ -163,6 +177,11 @@ class AsyncDAGExecutor:
         errors: Dict[str, str],
         semaphore: asyncio.Semaphore,
     ) -> None:
+        """执行单个节点，并持久化完整的状态迁移。
+
+        每一种终态都会写入相同的可观测面：内存状态、Trace 记录和可选 Checkpoint。
+        因此前端可以区分成功、超时和普通 handler 失败。
+        """
         async with semaphore:
             self.reexecuted_node_count += 1
             states[node.task_id] = TaskState.RUNNING
@@ -174,6 +193,8 @@ class AsyncDAGExecutor:
             )
             self._record_node_checkpoint(node=node, status=TaskState.RUNNING)
             try:
+                # _call_handler 会把同步 handler 放进工作线程，避免一个遗留的阻塞调用
+                # 卡住无关的异步节点。
                 coroutine = self._call_handler(node, outputs)
                 if self.task_timeout_seconds is None:
                     result = await coroutine

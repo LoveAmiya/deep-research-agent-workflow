@@ -11,11 +11,17 @@ from core import schema as core_schema
 
 
 def utc_now_iso() -> str:
+    """返回带时区的时间戳，便于跨机器比较运行记录。"""
     return datetime.now(timezone.utc).isoformat()
 
 
 @dataclass
 class NodeCheckpoint:
+    """一个 DAG 节点最新执行状态的持久化快照。
+
+    ``output`` 会序列化，而不是保留为内存中的 Python 对象，因此后续进程可以恢复
+    已成功节点，无需重复发起外部 API 调用。
+    """
     node_id: str
     status: str
     agent_name: Optional[str] = None
@@ -29,6 +35,7 @@ class NodeCheckpoint:
 
 @dataclass
 class RunCheckpoint:
+    """运行级别的持久化索引，用来判断哪些节点可以安全恢复。"""
     run_id: str
     task: str
     status: str
@@ -53,6 +60,10 @@ class RunCheckpoint:
         )
 
     def refresh_node_lists(self, all_node_ids: Optional[list[str]] = None) -> None:
+        """从节点真实状态推导汇总列表，避免维护重复状态。
+
+        节点 Checkpoint 是唯一事实来源；这些列表用于命令行和 UI 快速查看已保存运行。
+        """
         self.completed_node_ids = [
             node_id
             for node_id, checkpoint in self.node_checkpoints.items()
@@ -83,6 +94,10 @@ class CheckpointStore:
 
 
 class JSONCheckpointStore(CheckpointStore):
+    """使用写后替换方式持久化到文件的 Checkpoint 存储。
+
+    写入时先创建临时文件再替换目标文件，降低中断后留下截断 JSON 的概率。
+    """
     def __init__(self, checkpoint_dir: str = "runs/checkpoints") -> None:
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)

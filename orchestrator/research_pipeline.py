@@ -17,6 +17,11 @@ from tools.citation_tool import CitationRegistry, CitationValidator
 
 
 def build_minimal_research_graph() -> TaskGraph:
+    """将默认研究流程声明为依赖图。
+
+    节点间通过 ``depends_on`` 表示依赖，而不是由一个 Agent 直接调用下一个。
+    因此执行器能够校验顺序、并发调度无依赖节点，并从保存的 Checkpoint 恢复单个节点。
+    """
     graph = TaskGraph()
     graph.add_node(
         TaskNode(
@@ -98,6 +103,11 @@ def run_research_pipeline(
     force_synthesis_on_replan_exhausted: bool = True,
     vector_memory_store=None,
 ) -> dict:
+    """运行同步端到端流水线，并返回可检查的全部产物。
+
+    此函数分离四件事：准备 Checkpoint、装配依赖、执行 DAG、汇总结果。
+    这种边界让测试可以分别替换 Mock LLM、搜索和抓取工具。
+    """
     checkpoint, checkpoint_store, resumed, resume_missing = _prepare_checkpoint(
         question_text=question_text,
         checkpoint_enabled=checkpoint_enabled,
@@ -121,6 +131,7 @@ def run_research_pipeline(
     citation_registry = components["citation_registry"]
     memory = components["memory"]
     question = components["question"]
+    # 执行器负责顺序与失败状态；Agent 只接收下方 handler 声明的输入，彼此不直接调用。
     execution = DAGExecutor(
         graph=graph,
         handlers=handlers,
@@ -163,6 +174,11 @@ def build_research_pipeline_components(
     web_fetcher=None,
     citation_registry=None,
 ) -> dict:
+    """创建 Agent 与 handler，将 DAG 输出转换为下游输入。
+
+    ``handlers`` 是编排层和 Agent 之间的显式契约：每个 handler 只能读取已完成
+    的上游输出，并将它们包装为包含共享记忆和外部客户端的 ``AgentContext``。
+    """
     question = ResearchQuestion(question=question_text)
     planner = PlannerAgent()
     searcher = SearcherAgent()
@@ -176,6 +192,7 @@ def build_research_pipeline_components(
         citation_registry = CitationRegistry()
 
     graph = build_minimal_research_graph()
+    # handler 使数据依赖可见。例如只有图中的 search_task 成功后，Reader 才能拿到 Searcher 输出。
     handlers = {
         "planner_task": lambda outputs, node: planner.run(
             AgentContext(

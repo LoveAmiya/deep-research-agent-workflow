@@ -29,7 +29,11 @@ def build_report_workbench_payload(
     red_blue_rounds: int = 1,
     **pipeline_kwargs: Any,
 ) -> dict:
-    """Run the model-first workbench and return a JSON-friendly visual explanation."""
+    """运行流水线，并把内部产物转换为浏览器可用的数据。
+
+    工作台不是第二套研究实现，而是适配层：它以 JSON 友好的结构暴露每个 Agent 的
+    贡献、报告差异、引用和 Trace，让审阅者检查最终报告的来源链路。
+    """
 
     question = (question_text or DEFAULT_QUESTION).strip() or DEFAULT_QUESTION
     if not legacy_pipeline:
@@ -45,6 +49,10 @@ def build_report_workbench_payload(
 
 
 def summarize_pipeline_result(result: dict) -> dict:
+    """将带类型的流水线输出转换为稳定的前端 Payload。
+
+    单独保留这一层投影，避免 HTTP/UI 格式化逻辑反向侵入 Agent 与编排代码。
+    """
     execution = result["execution"]
     outputs = execution.outputs
     initial_report = result.get("initial_report")
@@ -861,6 +869,11 @@ INDEX_HTML = """<!doctype html>
 
 
 class ReportWorkbenchHandler(BaseHTTPRequestHandler):
+    """本地报告审阅工作台的最小 HTTP 边界。
+
+    ``GET /`` 返回静态浏览器页面；POST 请求运行研究任务，并返回单个 JSON Payload
+    或连续的流水线事件流。
+    """
     server_version = "DeepResearchWorkbench/1.0"
 
     def do_GET(self) -> None:
@@ -915,10 +928,16 @@ class ReportWorkbenchHandler(BaseHTTPRequestHandler):
         self.wfile.write(encoded)
 
     def _write_streaming_payload(self, question: str) -> None:
+        """为耗时任务在最终 Payload 前持续推送状态事件。
+
+        event sink 被传入流水线适配层，因此 UI 观察到的是实际执行里程碑，而不是伪造进度条。
+        """
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
+        # 浏览器前端在读取到流结束后才会恢复“生成报告”按钮。这个端点不是
+        # 永久订阅，而是一轮任务对应一条有限事件流，因此完成后必须关闭连接。
+        self.send_header("Connection", "close")
         self.end_headers()
 
         def emit(event_type: str, data: dict) -> None:
@@ -937,6 +956,10 @@ class ReportWorkbenchHandler(BaseHTTPRequestHandler):
             )
         except Exception as exc:  # pragma: no cover - exercised manually through the browser
             emit("run_error", {"error": str(exc)})
+        finally:
+            # 显式结束 HTTP 响应，令 Fetch 的 reader.read() 返回 done=true，
+            # 前端 runResearch() 的 finally 才能重新启用按钮。
+            self.close_connection = True
 
     def log_message(self, format: str, *args: Any) -> None:
         return

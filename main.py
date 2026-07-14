@@ -1,3 +1,9 @@
+"""DeepResearch 完整演示的命令行入口。
+
+本模块只负责读取配置、创建 LLM/搜索/抓取工具并交给编排层执行。
+把依赖装配集中在入口处，可以让流水线模块在测试中替换为 Mock 依赖。
+"""
+
 import asyncio
 import sys
 
@@ -29,6 +35,11 @@ def build_demo_execution(
     resume_from_run_id: str | None = None,
     red_blue_loop_enabled: bool | None = None,
 ) -> dict:
+    """创建依赖并运行同步或异步 DAG。
+
+    返回值同时保留最终产物、运行时依赖和元数据，因此命令行与浏览器工作台
+    不只展示报告本身，还能展示报告是如何一步步生成的。
+    """
     llm_config = load_llm_config_from_env(load_dotenv=load_dotenv)
     search_config = load_search_config_from_env(load_dotenv=load_dotenv)
     dag_config = load_dag_execution_config_from_env(load_dotenv=load_dotenv)
@@ -46,6 +57,7 @@ def build_demo_execution(
     search_provider_registry = create_search_provider_registry(search_config)
     fetch_tool = create_fetch_tool(search_config)
     web_fetcher = create_web_fetcher(search_config)
+    # 两条路径使用相同依赖，方便在不修改 Agent 的前提下比较同步和异步执行。
     if dag_config.use_async:
         result = asyncio.run(
             async_run_research_pipeline(
@@ -108,6 +120,7 @@ def build_demo_review() -> dict:
 
 
 def main() -> None:
+    """运行演示，并输出报告质量、Trace 和恢复执行信息。"""
     cli_args = _parse_cli_args(sys.argv[1:])
     resume_from_run_id = cli_args["resume_from_run_id"]
     execution = build_demo_execution(
@@ -230,6 +243,11 @@ def main() -> None:
 
 
 def _parse_cli_args(args: list[str]) -> dict:
+    """解析两个命令行参数，避免为演示项目额外引入 CLI 依赖。
+
+    ``--resume <run_id>`` 复用已经成功的 Checkpoint 节点；
+    ``--red-blue-loop`` 开启额外的审查与修订循环。
+    """
     parsed = {
         "resume_from_run_id": None,
         "red_blue_loop_enabled": None,

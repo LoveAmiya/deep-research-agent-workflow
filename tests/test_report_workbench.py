@@ -1,7 +1,17 @@
+import http.client
+import json
+import threading
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
-from report_workbench import TASK_ORDER, build_report_workbench_payload
+from http.server import ThreadingHTTPServer
+
+from report_workbench import (
+    TASK_ORDER,
+    ReportWorkbenchHandler,
+    build_report_workbench_payload,
+)
 
 
 class ScriptedChineseLLMClient:
@@ -27,6 +37,35 @@ class ScriptedChineseLLMClient:
 
 
 class TestReportWorkbench(unittest.TestCase):
+    def test_stream_endpoint_closes_after_emitting_final_payload(self) -> None:
+        """浏览器读完最终事件后必须能结束读取循环并恢复运行按钮。"""
+
+        def fake_build_report_workbench_payload(question, **kwargs):
+            kwargs["event_sink"]("run_completed", {"payload": {"ok": True, "question": question}})
+            return {"ok": True}
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), ReportWorkbenchHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+
+        try:
+            with patch("report_workbench.build_report_workbench_payload", fake_build_report_workbench_payload):
+                connection.request(
+                    "POST",
+                    "/api/research/stream",
+                    body=json.dumps({"question": "测试问题"}),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                self.assertEqual(response.status, 200)
+                self.assertEqual(response.getheader("Connection"), "close")
+        finally:
+            connection.close()
+            server.shutdown()
+            thread.join(timeout=2)
+            server.server_close()
+
     def test_payload_contains_final_report_and_pipeline_impacts(self) -> None:
         payload = build_report_workbench_payload(
             "What are the main factors that affect open-source LLM adoption in enterprises?"
