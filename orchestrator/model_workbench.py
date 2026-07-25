@@ -392,6 +392,8 @@ class ModelWorkbenchRunner:
                         f"这是第 {round_index} 轮 Red Review。请扮演严格审查者，找出报告仍然存在的问题。"
                         "只返回 JSON，字段为 passed, summary, issues。issues 数组元素包含 "
                         "issueId, severity, message, evidence, suggestion。issues 最多 3 条。\n\n"
+                        "每条 evidence 必须指出报告中的具体句子、章节或缺失项；每条 suggestion 必须说明要改哪一段、"
+                        "应补充或删除什么。不要输出泛化的“加强论证”“补充细节”一类建议。\n\n"
                         f"研究问题：{self.question}\nCritic 检查：{json.dumps(critic_review, ensure_ascii=False)}\n"
                         f"当前报告：\n{report_markdown}"
                     ),
@@ -479,13 +481,21 @@ class ModelWorkbenchRunner:
                 for item in red_review.get("issues", [])
                 if item.get("issueId")
             }
+            applicable_issue_ids = fixed or [
+                issue_id
+                for issue_id in issues_by_id
+                if issue_id not in remaining
+            ]
+            applied_change = _revision_change_summary(report_markdown, revised)
             changes = [
                 {
                     "issueId": issue_id,
-                    "change": notes[index] if index < len(notes) else "已根据 Red 审查建议修订相关段落。",
+                    "change": applied_change or (
+                        notes[index] if index < len(notes) else "已根据 Red 审查建议修订相关段落。"
+                    ),
                     "reason": str(issues_by_id.get(issue_id, {}).get("suggestion") or "回应对应审查问题。"),
                 }
-                for index, issue_id in enumerate(fixed)
+                for index, issue_id in enumerate(applicable_issue_ids)
             ]
         self._finish_step(
             task,
@@ -1065,6 +1075,19 @@ def _chunk_text(text: str, size: int = 160) -> list[str]:
     if current:
         chunks.append("".join(current))
     return chunks or [text]
+
+
+def _revision_change_summary(before: str, after: str, limit: int = 420) -> str:
+    """Turn a Blue markdown diff into a readable handoff when the model omits changes."""
+    diff_lines = list(unified_diff(before.splitlines(), after.splitlines(), lineterm=""))
+    added = [line[1:].strip() for line in diff_lines if line.startswith("+") and not line.startswith("+++")]
+    removed = [line[1:].strip() for line in diff_lines if line.startswith("-") and not line.startswith("---")]
+    parts = []
+    if added:
+        parts.append("新增：" + "；".join(item for item in added[:2] if item))
+    if removed:
+        parts.append("删除或替换：" + "；".join(item for item in removed[:2] if item))
+    return _trim(" ".join(parts), limit) if parts else ""
 
 
 def _headings(markdown: str) -> list[str]:

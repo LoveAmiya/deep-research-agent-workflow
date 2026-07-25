@@ -160,6 +160,7 @@ class TestReportWorkbench(unittest.TestCase):
 
         first_round = payload["reviewRounds"][0]
         self.assertTrue(first_round["blueRevision"]["changes"])
+        self.assertIn("新增：", first_round["blueRevision"]["changes"][0]["change"])
         self.assertIn("sourceUrl", payload["citationValidation"]["sources"][0])
 
     def test_default_workbench_completes_at_least_two_review_rounds(self) -> None:
