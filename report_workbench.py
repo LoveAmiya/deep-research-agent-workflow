@@ -11,6 +11,9 @@ from typing import Any
 from urllib.parse import urlparse
 
 from agents.base_agent import AgentResult
+from agents.red_blue_loop import RedBlueLoopConfig
+from core.config import load_llm_config_from_env
+from core.llm_client import create_llm_client
 from core.schema import BlueRevisionResult, Finding, RedReviewResult, ResearchPlan, ResearchReport
 from orchestrator.model_workbench import MODEL_TASKS, build_model_workbench_payload
 from orchestrator.research_pipeline import run_research_pipeline
@@ -26,6 +29,7 @@ def build_report_workbench_payload(
     use_env_llm: bool = False,
     event_sink=None,
     legacy_pipeline: bool = False,
+    model_workbench: bool = False,
     red_blue_rounds: int = 2,
     **pipeline_kwargs: Any,
 ) -> dict:
@@ -36,7 +40,7 @@ def build_report_workbench_payload(
     """
 
     question = (question_text or DEFAULT_QUESTION).strip() or DEFAULT_QUESTION
-    if not legacy_pipeline:
+    if model_workbench:
         return build_model_workbench_payload(
             question,
             llm_client=pipeline_kwargs.pop("llm_client", None),
@@ -44,8 +48,45 @@ def build_report_workbench_payload(
             event_sink=event_sink,
             red_blue_rounds=red_blue_rounds,
         )
+    review_rounds = max(2, min(3, int(red_blue_rounds)))
+    llm_client = pipeline_kwargs.get("llm_client")
+    collaborative_mode = "collaborative_dag"
+    if llm_client is None and use_env_llm:
+        llm_config = load_llm_config_from_env(load_dotenv=True)
+        if llm_config.enabled and llm_config.api_key and llm_config.model:
+            llm_client = create_llm_client(llm_config)
+            pipeline_kwargs["llm_client"] = llm_client
+            collaborative_mode = "collaborative_dag_llm"
+    if event_sink is not None:
+        event_sink(
+            "run_started",
+            {
+                "question": question,
+                "steps": [
+                    {"taskId": task_id, "agent": agent, "title": title, "status": "pending"}
+                    for task_id, agent, title in TASK_ORDER
+                ],
+                "modelRun": {"mode": collaborative_mode, "fallbackCount": 0},
+            },
+        )
+    pipeline_kwargs.setdefault("use_red_blue_loop", True)
+    pipeline_kwargs.setdefault(
+        "red_blue_loop_config",
+        RedBlueLoopConfig(max_rounds=max(1, review_rounds - 1)),
+    )
+    pipeline_kwargs["event_sink"] = event_sink
     result = run_research_pipeline(question, **pipeline_kwargs)
-    return summarize_pipeline_result(result)
+    payload = summarize_pipeline_result(result)
+    payload["modelRun"]["mode"] = collaborative_mode
+    if event_sink is not None:
+        for review in payload["reviewRounds"]:
+            event_sink("review_round_started", {"round": review["round"], "maxRounds": review_rounds})
+            event_sink("review_round_completed", {"round": review["round"], "review": review})
+        event_sink("report_validated", {"citationValidation": payload["citationValidation"]})
+        _emit_report_stream(event_sink, "finalReport", payload["finalReportMarkdown"])
+        event_sink("report_completed", {"finalReportMarkdown": payload["finalReportMarkdown"]})
+        event_sink("run_completed", {"payload": payload})
+    return payload
 
 
 def summarize_pipeline_result(result: dict) -> dict:
@@ -61,6 +102,12 @@ def summarize_pipeline_result(result: dict) -> dict:
     final_markdown = _report_markdown(final_report)
     diff_summary = _build_report_diff_summary(initial_markdown, final_markdown)
 
+    step_impacts = [
+        _summarize_step(task_id, agent_name, title, outputs, result, diff_summary)
+        for task_id, agent_name, title in TASK_ORDER
+    ]
+    for step in step_impacts:
+        step.pop("outputPreview", None)
     return {
         "success": bool(result.get("success")),
         "runId": result.get("run_id"),
@@ -69,14 +116,77 @@ def summarize_pipeline_result(result: dict) -> dict:
         "initialReportMarkdown": initial_markdown,
         "reportDiffSummary": diff_summary,
         "reportMetrics": _report_metrics(final_report, initial_report, result),
-        "stepImpacts": [
-            _summarize_step(task_id, agent_name, title, outputs, result, diff_summary)
-            for task_id, agent_name, title in TASK_ORDER
-        ],
+        "modelRun": {"mode": "collaborative_dag", "fallbackCount": 0},
+        "stepImpacts": step_impacts,
         "findings": [_summarize_finding(finding) for finding in result.get("findings", [])],
         "citationValidation": _to_jsonable(result.get("citation_validation", {})),
         "memoryTimeline": [_summarize_memory_item(item) for item in result.get("memory_items", [])],
-        "executionTrace": _to_jsonable(result.get("traces", [])),
+        "ledgerSummary": _to_jsonable(result.get("ledger_summary", {})),
+        "handoffs": [_summarize_handoff(handoff) for handoff in result.get("handoffs", [])],
+        "reviewRounds": _summarize_review_rounds(result),
+    }
+
+
+def _emit_report_stream(event_sink, target: str, text: str) -> None:
+    event_sink("report_stream_start", {"target": target})
+    for index in range(0, len(text), 240):
+        event_sink("report_delta", {"target": target, "delta": text[index : index + 240]})
+    event_sink("report_stream_done", {"target": target, "markdown": text})
+
+
+def _summarize_handoff(handoff: Any) -> dict:
+    data = _to_jsonable(handoff)
+    return {
+        "senderAgent": data.get("sender_agent", data.get("senderAgent", "")),
+        "recipientAgent": data.get("recipient_agent", data.get("recipientAgent", "")),
+        "status": data.get("status", ""),
+        "action": data.get("action", ""),
+        "reason": data.get("reason", ""),
+    }
+
+
+def _summarize_review_rounds(result: dict) -> list[dict]:
+    rounds = [_review_round(1, result.get("red_review"), result.get("blue_revision"))]
+    loop_result = result.get("red_blue_loop_result")
+    for loop_round in getattr(loop_result, "rounds", []) or []:
+        rounds.append(_review_round(
+            loop_round.round_index + 1,
+            loop_round.red_review,
+            loop_round.blue_revision,
+        ))
+    return rounds
+
+
+def _review_round(round_index: int, red_review: Any, blue_revision: Any) -> dict:
+    issues = []
+    for issue in getattr(red_review, "issues", []) or []:
+        issues.append(
+            {
+                "issueId": getattr(issue, "issue_id", ""),
+                "severity": getattr(issue, "severity", ""),
+                "message": getattr(issue, "message", ""),
+                "evidence": getattr(issue, "evidence", ""),
+                "suggestion": getattr(issue, "suggestion", ""),
+            }
+        )
+    changes = [
+        {"issueId": issue_id, "change": note, "reason": "回应 Red 审查意见。"}
+        for issue_id, note in zip(
+            getattr(blue_revision, "fixed_issue_ids", []) or [],
+            getattr(blue_revision, "revision_notes", []) or [],
+        )
+    ]
+    return {
+        "round": round_index,
+        "redIssues": issues,
+        "redSummary": getattr(red_review, "summary", ""),
+        "blueRevision": {
+            "fixedIssueIds": list(getattr(blue_revision, "fixed_issue_ids", []) or []),
+            "remainingIssueIds": list(getattr(blue_revision, "remaining_issue_ids", []) or []),
+            "revisionNotes": list(getattr(blue_revision, "revision_notes", []) or []),
+            "changes": changes,
+        },
+        "status": "PASSED" if getattr(red_review, "passed", False) and not issues else "REVISED",
     }
 
 
@@ -528,6 +638,10 @@ INDEX_HTML = """<!doctype html>
           <div id="reviewRounds" class="timeline"></div>
         </section>
         <section class="panel">
+          <h2>协作交接 Collaboration Handoffs</h2>
+          <div id="handoffs" class="timeline"></div>
+        </section>
+        <section class="panel">
           <h2>证据结论与引用 Findings & Citations（事实结论和来源标记）</h2>
           <div id="findings"></div>
         </section>
@@ -550,6 +664,7 @@ INDEX_HTML = """<!doctype html>
     const statusEl = document.getElementById("status");
     let currentSteps = [];
     let currentReviewRounds = [];
+    let currentHandoffs = [];
     let streamBuffers = {};
 
     runButton.addEventListener("click", runResearch);
@@ -580,6 +695,7 @@ INDEX_HTML = """<!doctype html>
     function clearDashboard() {
       currentSteps = [];
       currentReviewRounds = [];
+      currentHandoffs = [];
       streamBuffers = {};
       document.getElementById("metrics").innerHTML = "";
       document.getElementById("finalReport").innerHTML = "<p>等待模型生成最终报告...</p>";
@@ -587,6 +703,7 @@ INDEX_HTML = """<!doctype html>
       document.getElementById("reportDiff").textContent = "";
       document.getElementById("steps").innerHTML = "";
       document.getElementById("reviewRounds").innerHTML = "";
+      document.getElementById("handoffs").innerHTML = "";
       document.getElementById("citationValidation").innerHTML = "";
       document.getElementById("findings").innerHTML = "";
     }
@@ -639,6 +756,12 @@ INDEX_HTML = """<!doctype html>
       }
       if (event === "agent_progress") {
         statusEl.textContent = data.message || "Agent 正在处理。";
+        return;
+      }
+      if (event === "handoff_updated") {
+        upsertHandoff(data.handoff);
+        const handoff = data.handoff || {};
+        statusEl.textContent = `${handoff.senderAgent || "上游 Agent"} 已将成果交给 ${handoff.recipientAgent || "下游 Agent"}`;
         return;
       }
       if (event === "review_round_started") {
@@ -725,6 +848,8 @@ INDEX_HTML = """<!doctype html>
       renderSteps(currentSteps);
       currentReviewRounds = payload.reviewRounds || [];
       renderReviewRounds(currentReviewRounds);
+      currentHandoffs = payload.handoffs || [];
+      renderHandoffs(currentHandoffs);
       renderCitationValidation(payload.citationValidation || {});
       document.getElementById("findings").innerHTML = renderFindings(payload.findings || []);
     }
@@ -739,6 +864,32 @@ INDEX_HTML = """<!doctype html>
       if (index >= 0) currentReviewRounds[index] = review;
       else currentReviewRounds.push(review);
       renderReviewRounds(currentReviewRounds);
+    }
+
+    function upsertHandoff(handoff) {
+      if (!handoff) return;
+      const key = `${handoff.senderAgent || ""}-${handoff.recipientAgent || ""}-${handoff.reason || ""}`;
+      const index = currentHandoffs.findIndex(item => `${item.senderAgent || ""}-${item.recipientAgent || ""}-${item.reason || ""}` === key);
+      if (index >= 0) currentHandoffs[index] = handoff;
+      else currentHandoffs.push(handoff);
+      renderHandoffs(currentHandoffs);
+    }
+
+    function renderHandoffs(handoffs) {
+      if (!handoffs.length) {
+        document.getElementById("handoffs").innerHTML = "<p>等待 Agent 交接工件。</p>";
+        return;
+      }
+      document.getElementById("handoffs").innerHTML = handoffs.map(handoff => `
+        <article class="step">
+          <div class="step-head">
+            <h3>${escapeHtml(handoff.senderAgent || "Agent")} → ${escapeHtml(handoff.recipientAgent || "Agent")}</h3>
+            <span class="badge ${handoff.status === "REVISION_REQUESTED" ? "warn" : ""}">${escapeHtml(handoff.status || "已交接")}</span>
+          </div>
+          <p class="impact">${escapeHtml(handoff.reason || handoff.summary || "已完成成果交接。")}</p>
+          ${handoff.action ? `<small>处理动作：${escapeHtml(handoff.action)}</small>` : ""}
+        </article>
+      `).join("");
     }
 
     function renderReviewRounds(rounds) {

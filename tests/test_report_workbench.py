@@ -127,6 +127,7 @@ class TestReportWorkbench(unittest.TestCase):
             llm_client=client,
             red_blue_rounds=2,
             event_sink=lambda event_type, data: events.append((event_type, data)),
+            model_workbench=True,
         )
 
         self.assertEqual(len(client.calls), len(TASK_ORDER) + 2)
@@ -183,6 +184,7 @@ class TestReportWorkbench(unittest.TestCase):
             llm_client=client,
             red_blue_rounds=2,
             event_sink=lambda event_type, data: events.append((event_type, data)),
+            model_workbench=True,
         )
 
         writer_done = next(
@@ -222,6 +224,33 @@ class TestReportWorkbench(unittest.TestCase):
         self.assertEqual(len(payload["reviewRounds"]), 2)
         self.assertEqual([item["round"] for item in payload["reviewRounds"]], [1, 2])
         self.assertIn("review_round_started", [event_type for event_type, _ in events])
+
+    def test_default_workbench_uses_collaborative_dag_and_emits_readable_handoffs(self) -> None:
+        events = []
+
+        payload = build_report_workbench_payload(
+            "What affects enterprise LLM adoption?",
+            event_sink=lambda event_type, data: events.append((event_type, data)),
+        )
+
+        event_types = [event_type for event_type, _ in events]
+        self.assertEqual(payload["modelRun"]["mode"], "collaborative_dag")
+        self.assertGreaterEqual(payload["ledgerSummary"]["artifactCount"], len(TASK_ORDER))
+        self.assertGreaterEqual(len(payload["handoffs"]), len(TASK_ORDER) - 1)
+        self.assertGreaterEqual(len(payload["reviewRounds"]), 2)
+        self.assertIn("handoff_updated", event_types)
+        self.assertIn("initialDraft", [
+            data.get("target") for event_type, data in events if event_type == "report_stream_start"
+        ])
+        self.assertLess(event_types.index("agent_started"), event_types.index("handoff_updated"))
+        self.assertLess(event_types.index("handoff_updated"), event_types.index("report_completed"))
+        self.assertEqual(event_types[-1], "run_completed")
+
+    def test_collaboration_workbench_html_renders_handoffs_without_raw_ledger_json(self) -> None:
+        self.assertIn('id="handoffs"', INDEX_HTML)
+        self.assertIn("renderHandoffs(currentHandoffs)", INDEX_HTML)
+        self.assertNotIn("JSON.stringify(payload.ledger", INDEX_HTML)
+        self.assertNotIn("executionTrace", INDEX_HTML)
 
     def test_public_payload_exposes_agent_summaries_but_not_raw_output_previews(self) -> None:
         payload = build_report_workbench_payload("How should teams evaluate agentic research tools?")
