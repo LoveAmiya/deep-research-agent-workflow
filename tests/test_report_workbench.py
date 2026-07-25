@@ -43,6 +43,8 @@ class TestReportWorkbench(unittest.TestCase):
     def test_user_workbench_does_not_render_raw_agent_or_validation_json(self) -> None:
         self.assertNotIn("JSON.stringify(payload.citationValidation", INDEX_HTML)
         self.assertNotIn("step.outputPreview", INDEX_HTML)
+        self.assertNotIn('window.addEventListener("load", runResearch)', INDEX_HTML)
+        self.assertIn('appendReviewTranscript("\\n--- 审查流开始 ---\\n")', INDEX_HTML)
 
     def test_user_workbench_renders_review_round_handoffs(self) -> None:
         self.assertIn('id="reviewRounds"', INDEX_HTML)

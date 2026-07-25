@@ -553,7 +553,7 @@ INDEX_HTML = """<!doctype html>
     let streamBuffers = {};
 
     runButton.addEventListener("click", runResearch);
-    window.addEventListener("load", runResearch);
+    statusEl.textContent = "请输入研究问题后，点击“生成报告”启动研究。";
 
     async function runResearch() {
       runButton.disabled = true;
@@ -652,7 +652,7 @@ INDEX_HTML = """<!doctype html>
       if (event === "report_stream_start") {
         streamBuffers[data.target] = "";
         if (data.target === "reviewTranscript") {
-          appendReviewTranscript("\n--- 审查流开始 ---\n");
+          appendReviewTranscript("\\n--- 审查流开始 ---\\n");
         } else {
           updateStreamTarget(data.target, "");
         }
@@ -670,7 +670,7 @@ INDEX_HTML = """<!doctype html>
       if (event === "report_stream_done") {
         const value = data.markdown || data.text || streamBuffers[data.target] || "";
         if (data.target === "reviewTranscript") {
-          appendReviewTranscript("\n--- 审查流结束 ---\n");
+          appendReviewTranscript("\\n--- 审查流结束 ---\\n");
         } else {
           updateStreamTarget(data.target, value);
         }
