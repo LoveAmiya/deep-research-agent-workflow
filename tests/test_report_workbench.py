@@ -8,6 +8,7 @@ from unittest.mock import patch
 from http.server import ThreadingHTTPServer
 
 from report_workbench import (
+    INDEX_HTML,
     TASK_ORDER,
     ReportWorkbenchHandler,
     build_report_workbench_payload,
@@ -37,6 +38,10 @@ class ScriptedChineseLLMClient:
 
 
 class TestReportWorkbench(unittest.TestCase):
+    def test_user_workbench_does_not_render_raw_agent_or_validation_json(self) -> None:
+        self.assertNotIn("JSON.stringify(payload.citationValidation", INDEX_HTML)
+        self.assertNotIn("step.outputPreview", INDEX_HTML)
+
     def test_stream_endpoint_closes_after_emitting_final_payload(self) -> None:
         """浏览器读完最终事件后必须能结束读取循环并恢复运行按钮。"""
 

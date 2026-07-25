@@ -451,6 +451,9 @@ INDEX_HTML = """<!doctype html>
       line-height: 1.45;
       overflow-wrap: anywhere;
     }
+    .validation-summary { margin: 0; line-height: 1.5; }
+    .validation-summary.ok { color: var(--accent); font-weight: 700; }
+    .validation-summary.warn { color: var(--accent-2); font-weight: 700; }
     .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
     .chip {
       border: 1px solid var(--line);
@@ -532,7 +535,7 @@ INDEX_HTML = """<!doctype html>
         </section>
         <section class="panel">
           <h2>Citation Validation（引用校验）</h2>
-          <pre id="citationValidation"></pre>
+          <div id="citationValidation"></div>
         </section>
       </aside>
     </section>
@@ -577,7 +580,7 @@ INDEX_HTML = """<!doctype html>
       document.getElementById("initialDraft").textContent = "";
       document.getElementById("reportDiff").textContent = "";
       document.getElementById("steps").innerHTML = "";
-      document.getElementById("citationValidation").textContent = "";
+      document.getElementById("citationValidation").innerHTML = "";
       document.getElementById("findings").innerHTML = "";
     }
 
@@ -688,8 +691,7 @@ INDEX_HTML = """<!doctype html>
       ].join("\\n");
       currentSteps = payload.stepImpacts || [];
       renderSteps(currentSteps);
-      document.getElementById("citationValidation").textContent =
-        JSON.stringify(payload.citationValidation || {}, null, 2);
+      renderCitationValidation(payload.citationValidation || {});
       document.getElementById("findings").innerHTML = renderFindings(payload.findings || []);
     }
 
@@ -708,6 +710,21 @@ INDEX_HTML = """<!doctype html>
       `).join("");
     }
 
+    function renderCitationValidation(validation) {
+      const issues = Array.isArray(validation.issues) ? validation.issues : [];
+      const passed = validation.passed === true;
+      const summary = passed
+        ? "引用校验已通过。报告中的引用标记与可用来源一致。"
+        : "引用仍需人工复核。最终报告已保留可追踪的校验状态。";
+      const issueList = issues.length
+        ? `<ul class="list">${issues.map(issue => `<li>${escapeHtml(String(issue))}</li>`).join("")}</ul>`
+        : "";
+      document.getElementById("citationValidation").innerHTML = `
+        <p class="validation-summary ${passed ? "ok" : "warn"}">${escapeHtml(summary)}</p>
+        ${issueList}
+      `;
+    }
+
     function renderStep(step) {
       const status = step.status || (step.success ? "done" : "pending");
       const badgeClass = status === "running" ? "run" : (status === "fallback" || !step.success ? "warn" : "");
@@ -724,9 +741,6 @@ INDEX_HTML = """<!doctype html>
           <ul class="list">${group.items.map(item => `<li>${escapeHtml(String(item))}</li>`).join("")}</ul>
         </details>
       `).join("");
-      const preview = step.outputPreview
-        ? `<details><summary>输出预览 Output preview</summary><pre>${escapeHtml(step.outputPreview)}</pre></details>`
-        : "";
       const errorBox = step.error
         ? `<div class="failure"><strong>失败原因 Failure reason:</strong> ${escapeHtml(step.error)}</div>`
         : "";
@@ -744,7 +758,6 @@ INDEX_HTML = """<!doctype html>
           <div class="chips">${modeChip}${metricChips}</div>
           ${bullets ? `<ul class="list">${bullets}</ul>` : ""}
           ${highlights}
-          ${preview}
         </article>
       `;
     }
