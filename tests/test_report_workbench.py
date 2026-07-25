@@ -44,6 +44,11 @@ class TestReportWorkbench(unittest.TestCase):
         self.assertNotIn("JSON.stringify(payload.citationValidation", INDEX_HTML)
         self.assertNotIn("step.outputPreview", INDEX_HTML)
 
+    def test_user_workbench_renders_review_round_handoffs(self) -> None:
+        self.assertIn('id="reviewRounds"', INDEX_HTML)
+        self.assertIn("renderReviewRounds(currentReviewRounds)", INDEX_HTML)
+        self.assertIn('event === "review_round_completed"', INDEX_HTML)
+
     def test_stream_endpoint_closes_after_emitting_final_payload(self) -> None:
         """浏览器读完最终事件后必须能结束读取循环并恢复运行按钮。"""
 

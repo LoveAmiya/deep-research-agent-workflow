@@ -524,6 +524,10 @@ INDEX_HTML = """<!doctype html>
           </div>
         </section>
         <section class="panel">
+          <h2>Review Handoffs（Red/Blue 审查交接）</h2>
+          <div id="reviewRounds" class="timeline"></div>
+        </section>
+        <section class="panel">
           <h2>证据结论与引用 Findings & Citations（事实结论和来源标记）</h2>
           <div id="findings"></div>
         </section>
@@ -545,6 +549,7 @@ INDEX_HTML = """<!doctype html>
     const runButton = document.getElementById("runButton");
     const statusEl = document.getElementById("status");
     let currentSteps = [];
+    let currentReviewRounds = [];
     let streamBuffers = {};
 
     runButton.addEventListener("click", runResearch);
@@ -574,12 +579,14 @@ INDEX_HTML = """<!doctype html>
 
     function clearDashboard() {
       currentSteps = [];
+      currentReviewRounds = [];
       streamBuffers = {};
       document.getElementById("metrics").innerHTML = "";
       document.getElementById("finalReport").innerHTML = "<p>等待模型生成最终报告...</p>";
       document.getElementById("initialDraft").textContent = "";
       document.getElementById("reportDiff").textContent = "";
       document.getElementById("steps").innerHTML = "";
+      document.getElementById("reviewRounds").innerHTML = "";
       document.getElementById("citationValidation").innerHTML = "";
       document.getElementById("findings").innerHTML = "";
     }
@@ -623,11 +630,23 @@ INDEX_HTML = """<!doctype html>
         statusEl.textContent = `已启动：${modeLabel(data.modelRun?.mode)}，正在调用 PlannerAgent（规划 Agent）...`;
         return;
       }
-      if (event === "agent_started" || event === "agent_done" || event === "agent_fallback") {
+      if (event === "agent_started" || event === "agent_done" || event === "agent_fallback" || event === "agent_completed") {
         upsertStep(data.step);
         const label = data.step?.agent || "Agent";
         const state = statusLabel(data.step?.status || "");
         statusEl.textContent = `${label}：${state}`;
+        return;
+      }
+      if (event === "agent_progress") {
+        statusEl.textContent = data.message || "Agent 正在处理。";
+        return;
+      }
+      if (event === "review_round_started") {
+        statusEl.textContent = `正在进行第 ${data.round} / ${data.maxRounds} 轮 Red/Blue 审查...`;
+        return;
+      }
+      if (event === "review_round_completed") {
+        upsertReviewRound(data.review);
         return;
       }
       if (event === "report_stream_start") {
@@ -691,12 +710,52 @@ INDEX_HTML = """<!doctype html>
       ].join("\\n");
       currentSteps = payload.stepImpacts || [];
       renderSteps(currentSteps);
+      currentReviewRounds = payload.reviewRounds || [];
+      renderReviewRounds(currentReviewRounds);
       renderCitationValidation(payload.citationValidation || {});
       document.getElementById("findings").innerHTML = renderFindings(payload.findings || []);
     }
 
     function renderSteps(steps) {
       document.getElementById("steps").innerHTML = (steps || []).map(renderStep).join("");
+    }
+
+    function upsertReviewRound(review) {
+      if (!review) return;
+      const index = currentReviewRounds.findIndex(item => item.round === review.round);
+      if (index >= 0) currentReviewRounds[index] = review;
+      else currentReviewRounds.push(review);
+      renderReviewRounds(currentReviewRounds);
+    }
+
+    function renderReviewRounds(rounds) {
+      if (!rounds.length) {
+        document.getElementById("reviewRounds").innerHTML = "<p>等待 Red/Blue 审查开始。</p>";
+        return;
+      }
+      document.getElementById("reviewRounds").innerHTML = rounds.map(review => {
+        const issues = (review.redIssues || []).map(item => item.message || String(item));
+        const revision = review.blueRevision || {};
+        const notes = revision.revisionNotes || [];
+        const fixed = revision.fixedIssueIds || [];
+        const remaining = revision.remainingIssueIds || [];
+        const issueList = issues.length
+          ? `<ul class="list">${issues.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+          : "<p>Red 未发现新的阻断问题。</p>";
+        const revisionList = [...notes, ...fixed.map(item => `已修复：${item}`), ...remaining.map(item => `仍待复核：${item}`)]
+          .map(item => `<li>${escapeHtml(item)}</li>`).join("");
+        return `
+          <article class="step">
+            <div class="step-head">
+              <h3>第 ${escapeHtml(review.round)} 轮审查</h3>
+              <span class="badge ${review.status === "PASSED" ? "" : "warn"}">${escapeHtml(review.status || "REVIEWED")}</span>
+            </div>
+            <p class="impact">${escapeHtml(review.redSummary || "Red 提交审查结论，Blue 据此完成受控修订。")}</p>
+            <details open><summary>Red 发现的问题</summary>${issueList}</details>
+            ${revisionList ? `<details open><summary>Blue 修订结果</summary><ul class="list">${revisionList}</ul></details>` : ""}
+          </article>
+        `;
+      }).join("");
     }
 
     function firstStepError(steps) {
