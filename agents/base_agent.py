@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
     from core.llm_client import BaseLLMClient
+    from memory.research_ledger import ResearchLedger
     from memory.store import SharedMemory
 
 
@@ -12,6 +13,7 @@ class AgentContext:
     inputs: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     memory: Optional["SharedMemory"] = None
+    ledger: Optional["ResearchLedger"] = None
     llm_client: Optional["BaseLLMClient"] = None
     search_provider_registry: Optional[Any] = None
     web_fetcher: Optional[Any] = None

@@ -9,6 +9,7 @@ from agents.searcher_agent import SearcherAgent
 from agents.writer_agent import WriterAgent
 from core.schema import ResearchQuestion
 from memory.store import SharedMemory
+from memory.research_ledger import ResearchLedger
 from memory.integration import persist_pipeline_result_to_vector_memory
 from orchestrator.checkpoint import JSONCheckpointStore, RunCheckpoint
 from orchestrator.dag import TaskGraph, TaskNode
@@ -102,6 +103,7 @@ def run_research_pipeline(
     max_failed_nodes_before_force_synthesis: int = 3,
     force_synthesis_on_replan_exhausted: bool = True,
     vector_memory_store=None,
+    event_sink=None,
 ) -> dict:
     """运行同步端到端流水线，并返回可检查的全部产物。
 
@@ -125,11 +127,19 @@ def run_research_pipeline(
         fetch_tool=fetch_tool,
         web_fetcher=web_fetcher,
         citation_registry=citation_registry,
+        ledger=ResearchLedger.from_dict(
+            checkpoint.metadata.get("research_ledger")
+        ) if checkpoint is not None and checkpoint.metadata.get("research_ledger") else ResearchLedger(
+            run_id=checkpoint.run_id if checkpoint is not None else run_id
+        ),
+        checkpoint=checkpoint,
+        event_sink=event_sink,
     )
     graph = components["graph"]
     handlers = components["handlers"]
     citation_registry = components["citation_registry"]
     memory = components["memory"]
+    ledger = components["ledger"]
     question = components["question"]
     # 执行器负责顺序与失败状态；Agent 只接收下方 handler 声明的输入，彼此不直接调用。
     execution = DAGExecutor(
@@ -153,6 +163,8 @@ def run_research_pipeline(
         red_blue_loop_config=red_blue_loop_config,
         checkpoint=checkpoint,
         resume_missing=resume_missing,
+        ledger=ledger,
+        event_sink=event_sink,
     )
     if vector_memory_store is not None:
         result["vector_memory_ids"] = persist_pipeline_result_to_vector_memory(
@@ -173,6 +185,9 @@ def build_research_pipeline_components(
     fetch_tool=None,
     web_fetcher=None,
     citation_registry=None,
+    ledger: ResearchLedger | None = None,
+    checkpoint: RunCheckpoint | None = None,
+    event_sink=None,
 ) -> dict:
     """创建 Agent 与 handler，将 DAG 输出转换为下游输入。
 
@@ -188,107 +203,197 @@ def build_research_pipeline_components(
     red = RedAgent()
     blue = BlueAgent()
     memory = SharedMemory()
+    ledger = ledger or ResearchLedger()
     if citation_registry is None:
         citation_registry = CitationRegistry()
 
     graph = build_minimal_research_graph()
     # handler 使数据依赖可见。例如只有图中的 search_task 成功后，Reader 才能拿到 Searcher 输出。
-    handlers = {
-        "planner_task": lambda outputs, node: planner.run(
-            AgentContext(
-                task_id=node.task_id,
-                inputs={"question": question},
-                metadata={"agent_name": planner.name},
-                memory=memory,
-                llm_client=llm_client,
+    def run_and_publish(agent, context, artifact_type, recipient, dependencies=()):
+        _emit_pipeline_event(event_sink, "agent_started", context, agent.name, artifact_type, "running")
+        dependency_ids = [
+            artifact.artifact_id
+            for dependency_type in dependencies
+            for artifact in [ledger.latest(dependency_type)]
+            if artifact is not None
+        ]
+        for artifact_id in dependency_ids:
+            source = ledger.read(artifact_id)
+            ledger.acknowledge(
+                sender_agent=source.producer_agent,
+                recipient_agent=agent.name,
+                artifact_ids=[artifact_id],
+                reason=f"{agent.name} 消费 {source.artifact_type} v{source.version}。",
             )
-        ),
-        "search_task": lambda outputs, node: searcher.run(
-            AgentContext(
-                task_id=node.task_id,
-                inputs={
+        context.ledger = ledger
+        result = agent.run(context)
+        if result.success:
+            artifact = ledger.publish(
+                artifact_type=artifact_type,
+                producer_agent=agent.name,
+                task_id=context.task_id,
+                content=result.output,
+                summary=_artifact_summary(artifact_type, result.output),
+                dependencies=dependency_ids,
+            )
+            if recipient:
+                handoff = ledger.acknowledge(
+                    sender_agent=agent.name,
+                    recipient_agent=recipient,
+                    artifact_ids=[artifact.artifact_id],
+                    reason=f"{agent.name} 已将 {artifact_type} 交给 {recipient}。",
+                )
+                _emit_handoff_event(event_sink, handoff, artifact.summary)
+            if checkpoint is not None:
+                checkpoint.metadata["research_ledger"] = ledger.to_dict()
+            _emit_readable_artifact_stream(event_sink, artifact_type, result.output)
+        _emit_pipeline_event(
+            event_sink,
+            "agent_done" if result.success else "agent_failed",
+            context,
+            agent.name,
+            artifact_type,
+            "done" if result.success else "failed",
+        )
+        return result
+
+    def context(task_id, agent_name, inputs, **extra):
+        return AgentContext(
+            task_id=task_id,
+            inputs=inputs,
+            metadata={"agent_name": agent_name},
+            memory=memory,
+            llm_client=llm_client,
+            ledger=ledger,
+            **extra,
+        )
+
+    def planner_handler(outputs, node):
+        return run_and_publish(
+            planner,
+            context(node.task_id, planner.name, {"question": question}),
+            "research_brief",
+            "SearcherAgent",
+        )
+
+    def search_handler(outputs, node):
+        return run_and_publish(
+            searcher,
+            context(
+                node.task_id,
+                searcher.name,
+                {
                     "plan": outputs["planner_task"].output,
                     "search_tool": search_tool,
                     "search_provider_registry": search_provider_registry,
                     "search_provider_order": search_provider_order,
                     "real_search_enabled": real_search_enabled,
                 },
-                metadata={"agent_name": searcher.name},
-                memory=memory,
-                llm_client=llm_client,
                 search_provider_registry=search_provider_registry,
-            )
-        ),
-        "reader_task": lambda outputs, node: reader.run(
-            AgentContext(
-                task_id=node.task_id,
-                inputs={
+            ),
+            "candidate_sources",
+            "ReaderAgent",
+            ("research_brief",),
+        )
+
+    def reader_handler(outputs, node):
+        return run_and_publish(
+            reader,
+            context(
+                node.task_id,
+                reader.name,
+                {
                     "search_results": outputs["search_task"].output,
                     "fetch_tool": fetch_tool,
                     "web_fetcher": web_fetcher,
                     "citation_registry": citation_registry,
                 },
-                metadata={"agent_name": reader.name},
-                memory=memory,
-                llm_client=llm_client,
                 web_fetcher=web_fetcher,
-            )
-        ),
-        "writer_task": lambda outputs, node: writer.run(
-            AgentContext(
-                task_id=node.task_id,
-                inputs={
+            ),
+            "approved_findings",
+            "WriterAgent",
+            ("candidate_sources",),
+        )
+
+    def writer_handler(outputs, node):
+        return run_and_publish(
+            writer,
+            context(
+                node.task_id,
+                writer.name,
+                {
                     "question": question,
                     "plan": outputs["planner_task"].output,
                     "findings": outputs["reader_task"].output,
                     "citation_registry": citation_registry,
                 },
-                metadata={"agent_name": writer.name},
-                memory=memory,
-                llm_client=llm_client,
-            )
-        ),
-        "critic_task": lambda outputs, node: critic.run(
-            AgentContext(
-                task_id=node.task_id,
-                inputs={
+            ),
+            "initial_report",
+            "CriticAgent",
+            ("approved_findings",),
+        )
+
+    def critic_handler(outputs, node):
+        return run_and_publish(
+            critic,
+            context(
+                node.task_id,
+                critic.name,
+                {
                     "report": outputs["writer_task"].output,
                     "findings": outputs["reader_task"].output,
                     "citation_registry": citation_registry,
                 },
-                metadata={"agent_name": critic.name},
-                memory=memory,
-                llm_client=llm_client,
-            )
-        ),
-        "red_review_task": lambda outputs, node: red.run(
-            AgentContext(
-                task_id=node.task_id,
-                inputs={
+            ),
+            "critic_review",
+            "RedAgent",
+            ("initial_report",),
+        )
+
+    def red_handler(outputs, node):
+        return run_and_publish(
+            red,
+            context(
+                node.task_id,
+                red.name,
+                {
                     "report": outputs["writer_task"].output,
                     "findings": outputs["reader_task"].output,
                     "critic_review": outputs["critic_task"].output,
                     "citation_registry": citation_registry,
                 },
-                metadata={"agent_name": red.name},
-                memory=memory,
-                llm_client=llm_client,
-            )
-        ),
-        "blue_revision_task": lambda outputs, node: blue.run(
-            AgentContext(
-                task_id=node.task_id,
-                inputs={
+            ),
+            "red_review",
+            "BlueAgent",
+            ("initial_report", "critic_review"),
+        )
+
+    def blue_handler(outputs, node):
+        return run_and_publish(
+            blue,
+            context(
+                node.task_id,
+                blue.name,
+                {
                     "report": outputs["writer_task"].output,
                     "red_review": outputs["red_review_task"].output,
                     "findings": outputs["reader_task"].output,
                     "citation_registry": citation_registry,
                 },
-                metadata={"agent_name": blue.name},
-                memory=memory,
-                llm_client=llm_client,
-            )
-        ),
+            ),
+            "blue_revision",
+            None,
+            ("red_review",),
+        )
+
+    handlers = {
+        "planner_task": planner_handler,
+        "search_task": search_handler,
+        "reader_task": reader_handler,
+        "writer_task": writer_handler,
+        "critic_task": critic_handler,
+        "red_review_task": red_handler,
+        "blue_revision_task": blue_handler,
     }
     return {
         "question": question,
@@ -296,7 +401,92 @@ def build_research_pipeline_components(
         "citation_registry": citation_registry,
         "graph": graph,
         "handlers": handlers,
+        "ledger": ledger,
     }
+
+
+def _artifact_summary(artifact_type: str, output: object) -> str:
+    summaries = {
+        "research_brief": "研究规划已交给来源发现 Agent。",
+        "candidate_sources": "候选来源已交给正文取证 Agent。",
+        "approved_findings": "可用发现已交给报告撰写 Agent。",
+        "initial_report": "初稿已交给质量审查 Agent。",
+        "critic_review": "结构审查已交给 Red 审查 Agent。",
+        "red_review": "Red 审查问题已交给 Blue 修订 Agent。",
+        "blue_revision": "Blue 修订版本已生成。",
+    }
+    return summaries.get(artifact_type, f"{artifact_type} 已生成。")
+
+
+def _emit_pipeline_event(event_sink, event_type, context, agent_name, artifact_type, status) -> None:
+    if event_sink is None:
+        return
+    event_sink(
+        event_type,
+        {
+            "step": {
+                "taskId": context.task_id,
+                "agent": agent_name,
+                "title": agent_name,
+                "impactOnFinalReport": _artifact_summary(artifact_type, None),
+                "status": status,
+                "success": status == "done",
+                "metrics": {},
+                "bullets": [],
+                "highlights": [],
+            }
+        },
+    )
+
+
+def _emit_handoff_event(event_sink, handoff, summary: str) -> None:
+    if event_sink is None:
+        return
+    event_sink(
+        "handoff_updated",
+        {
+            "handoff": {
+                "senderAgent": handoff.sender_agent,
+                "recipientAgent": handoff.recipient_agent,
+                "status": handoff.status,
+                "reason": handoff.reason,
+                "summary": summary,
+            }
+        },
+    )
+
+
+def _emit_readable_artifact_stream(event_sink, artifact_type: str, output: object) -> None:
+    if event_sink is None:
+        return
+    if artifact_type == "initial_report":
+        target = "initialDraft"
+        text = getattr(output, "markdown", "")
+    elif artifact_type == "red_review":
+        target = "reviewTranscript"
+        issues = list(getattr(output, "issues", []) or [])
+        lines = ["Red 审查：", getattr(output, "summary", "")]
+        lines.extend(
+            f"- {getattr(issue, 'issue_id', '问题')}: {getattr(issue, 'message', '')}"
+            for issue in issues
+        )
+        text = "\n".join(line for line in lines if line)
+    elif artifact_type == "blue_revision":
+        target = "reviewTranscript"
+        notes = list(getattr(output, "revision_notes", []) or [])
+        fixed = list(getattr(output, "fixed_issue_ids", []) or [])
+        remaining = list(getattr(output, "remaining_issue_ids", []) or [])
+        text = "\n".join(
+            ["Blue 修订：", *notes, *(f"已修复: {item}" for item in fixed), *(f"待复核: {item}" for item in remaining)]
+        )
+    else:
+        return
+    if not text:
+        return
+    event_sink("report_stream_start", {"target": target})
+    for index in range(0, len(text), 240):
+        event_sink("report_delta", {"target": target, "delta": text[index : index + 240]})
+    event_sink("report_stream_done", {"target": target, "text": text})
 
 
 def build_research_pipeline_result(
@@ -308,8 +498,11 @@ def build_research_pipeline_result(
     red_blue_loop_config: RedBlueLoopConfig | None = None,
     checkpoint: RunCheckpoint | None = None,
     resume_missing: bool = False,
+    ledger: ResearchLedger | None = None,
+    event_sink=None,
 ) -> dict:
     outputs = execution.outputs
+    ledger = ledger or ResearchLedger()
     blue_revision = outputs["blue_revision_task"].output
     red_blue_loop_result = None
     final_report = blue_revision.revised_report
@@ -336,6 +529,9 @@ def build_research_pipeline_result(
             critic_review=outputs["critic_task"].output,
         )
         final_report = red_blue_loop_result.final_report
+        _record_red_blue_loop_handoffs(ledger, red_blue_loop_result)
+        if checkpoint is not None:
+            checkpoint.metadata["research_ledger"] = ledger.to_dict()
     red_blue_loop_metadata = (
         dict(getattr(red_blue_loop_result, "metadata", {}) or {})
         if red_blue_loop_result is not None
@@ -358,6 +554,9 @@ def build_research_pipeline_result(
         "red_blue_loop_result": red_blue_loop_result,
         "memory_items": memory.to_dict_list(),
         "memory": memory,
+        "ledger": ledger,
+        "ledger_summary": ledger.summary(),
+        "handoffs": [handoff.__dict__ for handoff in ledger.list_handoffs()],
         "citation_registry": citation_registry,
         "citation_validation": citation_validation,
         "traces": execution.traces,
@@ -370,6 +569,43 @@ def build_research_pipeline_result(
             "resume_checkpoint_missing": resume_missing,
         },
     }
+
+
+def _record_red_blue_loop_handoffs(ledger: ResearchLedger, loop_result) -> None:
+    latest_report = ledger.latest("initial_report")
+    report_dependencies = [latest_report.artifact_id] if latest_report is not None else []
+    for round_result in loop_result.rounds:
+        red_artifact = ledger.publish(
+            artifact_type="red_review_round",
+            producer_agent="RedAgent",
+            task_id=f"red_blue_loop_red_{round_result.round_index}",
+            content=round_result.red_review,
+            summary=f"第 {round_result.round_index} 轮 Red 审查已完成。",
+            dependencies=report_dependencies,
+        )
+        if round_result.blue_revision is not None:
+            ledger.request_revision(
+                sender_agent="RedAgent",
+                recipient_agent="BlueAgent",
+                artifact_ids=[red_artifact.artifact_id],
+                reason=f"第 {round_result.round_index} 轮审查问题需要修订。",
+            )
+            blue_artifact = ledger.publish(
+                artifact_type="blue_revision_round",
+                producer_agent="BlueAgent",
+                task_id=f"red_blue_loop_blue_{round_result.round_index}",
+                content=round_result.blue_revision,
+                summary=f"第 {round_result.round_index} 轮 Blue 修订已完成。",
+                dependencies=[red_artifact.artifact_id],
+            )
+            ledger.acknowledge(
+                sender_agent="BlueAgent",
+                recipient_agent="RedAgent",
+                artifact_ids=[blue_artifact.artifact_id],
+                action="revalidate",
+                reason=f"第 {round_result.round_index} 轮修订等待复核。",
+            )
+            report_dependencies = [blue_artifact.artifact_id]
 
 
 def _restore_side_effects_from_outputs(

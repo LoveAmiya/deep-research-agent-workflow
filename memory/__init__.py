@@ -7,6 +7,7 @@ from memory.integration import (
     persist_pipeline_result_to_vector_memory,
 )
 from memory.persistent_store import PersistentStoreError, RunRecord, SQLiteRunStore
+from memory.research_ledger import LedgerArtifact, LedgerHandoff, ResearchLedger
 from memory.run_serializer import build_run_payload, build_run_summary, to_jsonable
 from memory.schema import MemoryItem as VectorMemoryItem
 from memory.schema import MemorySearchResult
@@ -15,11 +16,14 @@ from memory.vector_store import SQLiteVectorMemoryStore
 
 __all__ = [
     "HashEmbeddingProvider",
+    "LedgerArtifact",
+    "LedgerHandoff",
     "MemoryItem",
     "MemoryStore",
     "MemorySearchResult",
     "PersistentStoreError",
     "RunRecord",
+    "ResearchLedger",
     "SQLiteRunStore",
     "SQLiteVectorMemoryStore",
     "SharedMemory",
