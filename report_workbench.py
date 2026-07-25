@@ -519,7 +519,7 @@ INDEX_HTML = """<!doctype html>
             <pre id="initialDraft"></pre>
           </div>
           <div>
-            <h2>修订差异 Review Diff（初稿到终稿的变化）</h2>
+            <h2>审查过程与修订差异 Review Stream</h2>
             <pre id="reportDiff"></pre>
           </div>
         </section>
@@ -651,17 +651,29 @@ INDEX_HTML = """<!doctype html>
       }
       if (event === "report_stream_start") {
         streamBuffers[data.target] = "";
-        updateStreamTarget(data.target, "");
+        if (data.target === "reviewTranscript") {
+          appendReviewTranscript("\n--- 审查流开始 ---\n");
+        } else {
+          updateStreamTarget(data.target, "");
+        }
         return;
       }
       if (event === "report_delta") {
         streamBuffers[data.target] = (streamBuffers[data.target] || "") + (data.delta || "");
-        updateStreamTarget(data.target, streamBuffers[data.target]);
+        if (data.target === "reviewTranscript") {
+          appendReviewTranscript(data.delta || "");
+        } else {
+          updateStreamTarget(data.target, streamBuffers[data.target]);
+        }
         return;
       }
       if (event === "report_stream_done") {
         const value = data.markdown || data.text || streamBuffers[data.target] || "";
-        updateStreamTarget(data.target, value);
+        if (data.target === "reviewTranscript") {
+          appendReviewTranscript("\n--- 审查流结束 ---\n");
+        } else {
+          updateStreamTarget(data.target, value);
+        }
         return;
       }
       if (event === "run_completed") {
@@ -695,19 +707,20 @@ INDEX_HTML = """<!doctype html>
         document.getElementById("initialDraft").textContent = value;
       } else if (target === "finalReport") {
         document.getElementById("finalReport").innerHTML = renderMarkdown(value);
-      } else if (target === "redReview") {
-        document.getElementById("reportDiff").textContent = value;
       }
+    }
+
+    function appendReviewTranscript(value) {
+      const element = document.getElementById("reportDiff");
+      element.textContent += value;
+      element.scrollTop = element.scrollHeight;
     }
 
     function renderPayload(payload) {
       renderMetrics(payload.reportMetrics || {});
       document.getElementById("finalReport").innerHTML = renderMarkdown(payload.finalReportMarkdown || "");
       document.getElementById("initialDraft").textContent = payload.initialReportMarkdown || "";
-      document.getElementById("reportDiff").textContent = [
-        payload.reportDiffSummary?.summary || "",
-        ...(payload.reportDiffSummary?.diffPreview || [])
-      ].join("\\n");
+      document.getElementById("reportDiff").textContent = buildReviewTranscript(payload);
       currentSteps = payload.stepImpacts || [];
       renderSteps(currentSteps);
       currentReviewRounds = payload.reviewRounds || [];
@@ -734,15 +747,21 @@ INDEX_HTML = """<!doctype html>
         return;
       }
       document.getElementById("reviewRounds").innerHTML = rounds.map(review => {
-        const issues = (review.redIssues || []).map(item => item.message || String(item));
+        const issues = review.redIssues || [];
         const revision = review.blueRevision || {};
         const notes = revision.revisionNotes || [];
         const fixed = revision.fixedIssueIds || [];
         const remaining = revision.remainingIssueIds || [];
         const issueList = issues.length
-          ? `<ul class="list">${issues.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+          ? `<ul class="list">${issues.map(item => `<li><strong>${escapeHtml(item.issueId || "问题")}</strong>：${escapeHtml(item.message || "")}<br><small>依据：${escapeHtml(item.evidence || "未提供具体依据")}<br>建议：${escapeHtml(item.suggestion || "未提供具体建议")}</small></li>`).join("")}</ul>`
           : "<p>Red 未发现新的阻断问题。</p>";
-        const revisionList = [...notes, ...fixed.map(item => `已修复：${item}`), ...remaining.map(item => `仍待复核：${item}`)]
+        const changes = revision.changes || [];
+        const revisionList = [
+          ...notes,
+          ...changes.map(item => `${item.issueId || "未关联问题"}：${item.change || "未提供具体修改"}（原因：${item.reason || "回应审查意见"}）`),
+          ...fixed.filter(item => !changes.some(change => change.issueId === item)).map(item => `已修复：${item}`),
+          ...remaining.map(item => `仍待复核：${item}`)
+        ]
           .map(item => `<li>${escapeHtml(item)}</li>`).join("");
         return `
           <article class="step">
@@ -778,10 +797,52 @@ INDEX_HTML = """<!doctype html>
       const issueList = issues.length
         ? `<ul class="list">${issues.map(issue => `<li>${escapeHtml(String(issue))}</li>`).join("")}</ul>`
         : "";
+      const sources = Array.isArray(validation.sources) ? validation.sources : [];
+      const sourceList = sources.length
+        ? `<details open><summary>已校验的证据来源</summary><ul class="list">${sources.map(source => {
+            const label = `${source.citationId || "Citation"}：${source.sourceTitle || "未命名来源"}`;
+            const link = externalLink(source.sourceUrl, source.sourceUrl || "无公开链接");
+            const status = source.status === "linked" ? "已关联" : "待复核";
+            return `<li><strong>${escapeHtml(label)}</strong>（${escapeHtml(status)}）<br>${link}</li>`;
+          }).join("")}</ul></details>`
+        : "<p>本次报告没有可显示的证据来源。</p>";
       document.getElementById("citationValidation").innerHTML = `
         <p class="validation-summary ${passed ? "ok" : "warn"}">${escapeHtml(summary)}</p>
         ${issueList}
+        ${sourceList}
       `;
+    }
+
+    function buildReviewTranscript(payload) {
+      const summary = [
+        payload.reportDiffSummary?.summary || "",
+        ...(payload.reportDiffSummary?.diffPreview || [])
+      ].filter(Boolean);
+      const rounds = (payload.reviewRounds || []).flatMap(review => {
+        const red = [`第 ${review.round} 轮 Red Review`, review.redSummary || ""];
+        for (const issue of review.redIssues || []) {
+          red.push(`- ${issue.issueId || "问题"}：${issue.message || ""}`);
+          red.push(`  依据：${issue.evidence || "未提供具体依据"}`);
+          red.push(`  建议：${issue.suggestion || "未提供具体建议"}`);
+        }
+        const blue = [`第 ${review.round} 轮 Blue Revision`];
+        for (const change of review.blueRevision?.changes || []) {
+          blue.push(`- ${change.issueId || "未关联问题"}：${change.change || "未提供具体修改"}`);
+          blue.push(`  原因：${change.reason || "回应审查意见"}`);
+        }
+        return [...red, "", ...blue, ""];
+      });
+      return [...summary, "", ...rounds].join("\\n").trim();
+    }
+
+    function externalLink(url, label) {
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("unsupported protocol");
+        return `<a href="${escapeHtml(parsed.href)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`;
+      } catch (_) {
+        return `<small>${escapeHtml(label)}</small>`;
+      }
     }
 
     function renderStep(step) {

@@ -103,6 +103,9 @@ class ModelWorkbenchRunner:
         self.findings: list[dict] = []
         self.citation_validation: dict = {"passed": False, "issues": ["run_not_started"]}
         self.review_rounds: list[dict] = []
+        # The provider client is request/response today. Small chunks keep SSE visibly alive
+        # without exposing its JSON contract to the browser.
+        self._stream_delay_seconds = 0.012 if event_sink is not None else 0.0
 
     def run(self) -> dict:
         self._emit(
@@ -122,6 +125,7 @@ class ModelWorkbenchRunner:
         self.report_versions.append(
             {"label": "初稿 Initial Draft", "round": 0, "markdown": self.initial_report_markdown}
         )
+        self._emit_markdown_stream("initialDraft", self.initial_report_markdown)
 
         critic_review = self._run_critic(self.initial_report_markdown, self.findings)
         current_report = self.initial_report_markdown
@@ -130,12 +134,14 @@ class ModelWorkbenchRunner:
         for round_index in range(1, self.red_blue_rounds + 1):
             self._emit("review_round_started", {"round": round_index, "maxRounds": self.red_blue_rounds})
             red_review = self._run_red(round_index, current_report, critic_review)
+            self._emit_text_stream("reviewTranscript", self._red_review_text(red_review, round_index))
             current_report, blue_revision = self._run_blue(
                 round_index,
                 current_report,
                 red_review,
                 self.findings,
             )
+            self._emit_text_stream("reviewTranscript", self._blue_revision_text(blue_revision, round_index))
             self.report_versions.append(
                 {"label": f"第 {round_index} 轮修订", "round": round_index, "markdown": current_report}
             )
@@ -442,7 +448,9 @@ class ModelWorkbenchRunner:
                     role="user",
                     content=(
                         f"这是第 {round_index} 轮 Blue Revision。请根据 Red Review 修改报告。只返回 JSON，字段为 "
-                        "revisedReportMarkdown, fixedIssueIds, remainingIssueIds, revisionNotes。"
+                        "revisedReportMarkdown, fixedIssueIds, remainingIssueIds, revisionNotes, changes。"
+                        "changes 是数组，每项必须包含 issueId、change、reason；具体说明修改了报告的哪一段、改成了什么，"
+                        "不能只返回 issue ID。"
                         "最终报告必须是中文 Markdown，保留 # Research Report: 和 References 标题，"
                         "关键英文术语后面要给中文解释。总长度控制在 1000 到 1500 个汉字。\n\n"
                         f"研究问题：{self.question}\nFindings：{json.dumps(findings, ensure_ascii=False)}\n"
@@ -464,6 +472,21 @@ class ModelWorkbenchRunner:
         fixed = _string_list(parsed.get("fixedIssueIds"))
         remaining = _string_list(parsed.get("remainingIssueIds"))
         notes = _string_list(parsed.get("revisionNotes")) or [f"第 {round_index} 轮模型修订完成。"]
+        changes = _dict_list(parsed.get("changes"))
+        if not changes:
+            issues_by_id = {
+                str(item.get("issueId")): item
+                for item in red_review.get("issues", [])
+                if item.get("issueId")
+            }
+            changes = [
+                {
+                    "issueId": issue_id,
+                    "change": notes[index] if index < len(notes) else "已根据 Red 审查建议修订相关段落。",
+                    "reason": str(issues_by_id.get(issue_id, {}).get("suggestion") or "回应对应审查问题。"),
+                }
+                for index, issue_id in enumerate(fixed)
+            ]
         self._finish_step(
             task,
             call,
@@ -477,12 +500,20 @@ class ModelWorkbenchRunner:
             highlights=[
                 {"label": "已修复 issue id", "items": fixed},
                 {"label": "剩余 issue id", "items": remaining},
+                {
+                    "label": "具体修改",
+                    "items": [
+                        f"{item.get('issueId', '未关联问题')}：{item.get('change', '')}"
+                        for item in changes
+                    ],
+                },
             ],
         )
         return revised, {
             "fixedIssueIds": fixed,
             "remainingIssueIds": remaining,
             "revisionNotes": notes,
+            "changes": changes,
         }
 
     def _call_model(
@@ -635,12 +666,16 @@ class ModelWorkbenchRunner:
         self._emit("report_stream_start", {"target": target})
         for chunk in _chunk_text(markdown):
             self._emit("report_delta", {"target": target, "delta": chunk})
+            if self._stream_delay_seconds:
+                time.sleep(self._stream_delay_seconds)
         self._emit("report_stream_done", {"target": target, "markdown": markdown})
 
     def _emit_text_stream(self, target: str, text: str) -> None:
         self._emit("report_stream_start", {"target": target})
         for chunk in _chunk_text(text):
             self._emit("report_delta", {"target": target, "delta": chunk})
+            if self._stream_delay_seconds:
+                time.sleep(self._stream_delay_seconds)
         self._emit("report_stream_done", {"target": target, "text": text})
 
     def _model_run_metadata(self) -> dict:
@@ -880,21 +915,50 @@ class ModelWorkbenchRunner:
         lines = [f"第 {round_index} 轮 Red Review", "", red_review.get("summary", "")]
         for item in red_review.get("issues", []):
             lines.append(
-                f"- {item.get('issueId', '')} [{item.get('severity', 'medium')}] "
-                f"{item.get('message', '')} 建议：{item.get('suggestion', '')}"
+                f"\n- {item.get('issueId', '')} [{item.get('severity', 'medium')}]\n"
+                f"  问题：{item.get('message', '')}\n"
+                f"  依据：{item.get('evidence', '未提供具体依据')}\n"
+                f"  建议：{item.get('suggestion', '请补充具体修订建议')}"
             )
+        return "\n".join(lines).strip()
+
+    @staticmethod
+    def _blue_revision_text(blue_revision: dict, round_index: int) -> str:
+        lines = [f"第 {round_index} 轮 Blue Revision", ""]
+        for item in blue_revision.get("changes", []):
+            lines.extend(
+                [
+                    f"- {item.get('issueId', '未关联问题')}",
+                    f"  修改：{item.get('change', '未提供具体修改说明')}",
+                    f"  原因：{item.get('reason', '回应 Red 审查意见')}",
+                ]
+            )
+        if not blue_revision.get("changes"):
+            lines.extend(f"- 修订说明：{note}" for note in blue_revision.get("revisionNotes", []))
+        for issue_id in blue_revision.get("remainingIssueIds", []):
+            lines.append(f"- 仍待复核：{issue_id}")
         return "\n".join(lines).strip()
 
     @staticmethod
     def _validate_citations(markdown: str, findings: list[dict]) -> dict:
         citation_ids = [item.get("citationId") for item in findings if item.get("citationId")]
         missing = [citation_id for citation_id in citation_ids if f"[{citation_id}]" not in markdown]
+        sources = [
+            {
+                "citationId": item.get("citationId") or item.get("citation_id") or f"C{index}",
+                "sourceTitle": str(item.get("sourceTitle") or item.get("source_title") or "未命名来源"),
+                "sourceUrl": str(item.get("sourceUrl") or item.get("source_url") or ""),
+                "status": "missing_marker" if (item.get("citationId") or item.get("citation_id")) in missing else "linked",
+            }
+            for index, item in enumerate(findings, start=1)
+        ]
         return {
             "passed": "## References" in markdown and not missing,
             "grounded_citation_count": len(citation_ids) - len(missing),
             "expected_citation_count": len(citation_ids),
             "missingCitationIds": missing,
             "issues": [f"报告缺少引用标记 [{citation_id}]" for citation_id in missing],
+            "sources": sources,
         }
 
     @staticmethod
@@ -985,7 +1049,7 @@ def _trim(text: str, limit: int = 1000) -> str:
     return text[: limit - 3].rstrip() + "..."
 
 
-def _chunk_text(text: str, size: int = 700) -> list[str]:
+def _chunk_text(text: str, size: int = 160) -> list[str]:
     if not text:
         return [""]
     chunks = []

@@ -48,6 +48,9 @@ class TestReportWorkbench(unittest.TestCase):
         self.assertIn('id="reviewRounds"', INDEX_HTML)
         self.assertIn("renderReviewRounds(currentReviewRounds)", INDEX_HTML)
         self.assertIn('event === "review_round_completed"', INDEX_HTML)
+        self.assertIn("item.evidence", INDEX_HTML)
+        self.assertIn("revision.changes", INDEX_HTML)
+        self.assertIn("validation.sources", INDEX_HTML)
 
     def test_stream_endpoint_closes_after_emitting_final_payload(self) -> None:
         """浏览器读完最终事件后必须能结束读取循环并恢复运行按钮。"""
@@ -127,10 +130,37 @@ class TestReportWorkbench(unittest.TestCase):
         self.assertIn("review_round_started", event_types)
         self.assertIn("agent_done", event_types)
         self.assertIn("report_delta", event_types)
-        self.assertLess(event_types.index("report_validated"), event_types.index("report_stream_start"))
-        self.assertLess(event_types.index("report_stream_done"), event_types.index("report_completed"))
+        stream_starts = [
+            (index, data.get("target"))
+            for index, (event_type, data) in enumerate(events)
+            if event_type == "report_stream_start"
+        ]
+        initial_stream = next(index for index, target in stream_starts if target == "initialDraft")
+        final_stream = next(index for index, target in stream_starts if target == "finalReport")
+        writer_done = next(
+            index
+            for index, (event_type, data) in enumerate(events)
+            if event_type == "agent_done" and data["step"]["taskId"] == "writer_task"
+        )
+        first_review = next(index for index, (event_type, _) in enumerate(events) if event_type == "review_round_started")
+        review_streams = [index for index, target in stream_starts if target == "reviewTranscript"]
+        final_stream_done = next(
+            index
+            for index, (event_type, data) in enumerate(events)
+            if event_type == "report_stream_done" and data.get("target") == "finalReport"
+        )
+        self.assertGreater(initial_stream, writer_done)
+        self.assertLess(initial_stream, first_review)
+        self.assertGreaterEqual(len(review_streams), 4)
+        self.assertLess(review_streams[0], event_types.index("report_validated"))
+        self.assertLess(event_types.index("report_validated"), final_stream)
+        self.assertLess(final_stream_done, event_types.index("report_completed"))
         self.assertLess(event_types.index("report_completed"), event_types.index("run_completed"))
         self.assertEqual(event_types[-1], "run_completed")
+
+        first_round = payload["reviewRounds"][0]
+        self.assertTrue(first_round["blueRevision"]["changes"])
+        self.assertIn("sourceUrl", payload["citationValidation"]["sources"][0])
 
     def test_default_workbench_completes_at_least_two_review_rounds(self) -> None:
         events = []
