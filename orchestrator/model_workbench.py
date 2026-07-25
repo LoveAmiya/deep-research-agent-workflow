@@ -86,12 +86,12 @@ class ModelWorkbenchRunner:
         question: str,
         llm_client: BaseLLMClient,
         event_sink: EventSink | None = None,
-        red_blue_rounds: int = 1,
+        red_blue_rounds: int = 2,
     ) -> None:
         self.question = question
         self.llm_client = llm_client
         self.event_sink = event_sink
-        self.red_blue_rounds = max(1, red_blue_rounds)
+        self.red_blue_rounds = max(2, min(3, int(red_blue_rounds)))
         self.run_id = f"workbench-{uuid.uuid4().hex[:12]}"
         self.steps = {task.task_id: self._initial_step(task) for task in MODEL_TASKS}
         self.execution_trace: list[dict] = []
@@ -102,6 +102,7 @@ class ModelWorkbenchRunner:
         self.final_report_markdown = ""
         self.findings: list[dict] = []
         self.citation_validation: dict = {"passed": False, "issues": ["run_not_started"]}
+        self.review_rounds: list[dict] = []
 
     def run(self) -> dict:
         self._emit(
@@ -121,29 +122,42 @@ class ModelWorkbenchRunner:
         self.report_versions.append(
             {"label": "初稿 Initial Draft", "round": 0, "markdown": self.initial_report_markdown}
         )
-        self._emit_markdown_stream("initialDraft", self.initial_report_markdown)
 
         critic_review = self._run_critic(self.initial_report_markdown, self.findings)
         current_report = self.initial_report_markdown
         red_review: dict = {"passed": True, "issues": [], "summary": "未发现需要修订的问题。"}
 
         for round_index in range(1, self.red_blue_rounds + 1):
+            self._emit("review_round_started", {"round": round_index, "maxRounds": self.red_blue_rounds})
             red_review = self._run_red(round_index, current_report, critic_review)
-            self._emit_text_stream(
-                "redReview",
-                self._red_review_text(red_review, round_index),
+            current_report, blue_revision = self._run_blue(
+                round_index,
+                current_report,
+                red_review,
+                self.findings,
             )
-            current_report = self._run_blue(round_index, current_report, red_review, self.findings)
             self.report_versions.append(
                 {"label": f"第 {round_index} 轮修订", "round": round_index, "markdown": current_report}
             )
-            self._emit_markdown_stream("finalReport", current_report)
-            if red_review.get("passed") and not red_review.get("issues"):
+            self.review_rounds.append(
+                {
+                    "round": round_index,
+                    "redIssues": list(red_review.get("issues", [])),
+                    "redSummary": red_review.get("summary", ""),
+                    "blueRevision": blue_revision,
+                    "status": "PASSED" if red_review.get("passed") and not red_review.get("issues") else "REVISED",
+                }
+            )
+            self._emit("review_round_completed", {"round": round_index, "review": self.review_rounds[-1]})
+            if round_index >= 2 and red_review.get("passed") and not red_review.get("issues"):
                 break
 
         self.final_report_markdown = self._ensure_chinese_report_shape(current_report)
         self.citation_validation = self._validate_citations(self.final_report_markdown, self.findings)
         payload = self._build_payload(critic_review, red_review)
+        self._emit("report_validated", {"citationValidation": self.citation_validation})
+        self._emit_markdown_stream("finalReport", self.final_report_markdown)
+        self._emit("report_completed", {"finalReportMarkdown": self.final_report_markdown})
         self._emit("run_completed", {"payload": payload})
         return payload
 
@@ -424,7 +438,7 @@ class ModelWorkbenchRunner:
         report_markdown: str,
         red_review: dict,
         findings: list[dict],
-    ) -> str:
+    ) -> tuple[str, dict]:
         task = self._task("blue_revision_task")
         call = self._call_model(
             task,
@@ -472,7 +486,11 @@ class ModelWorkbenchRunner:
             ],
             output_preview=revised,
         )
-        return revised
+        return revised, {
+            "fixedIssueIds": fixed,
+            "remainingIssueIds": remaining,
+            "revisionNotes": notes,
+        }
 
     def _call_model(
         self,
@@ -513,6 +531,7 @@ class ModelWorkbenchRunner:
         )
         self._trace(task, "running", {"mode": step["mode"]})
         self._emit("agent_started", {"step": step})
+        self._emit("agent_progress", {"taskId": task.task_id, "message": f"{task.agent} 正在生成可交接产物。"})
 
     def _finish_step(
         self,
@@ -547,6 +566,8 @@ class ModelWorkbenchRunner:
             }
         )
         self._trace(task, status, {"durationMs": call.duration_ms, "fallbackUsed": call.fallback_used})
+        self._emit("artifact_ready", {"taskId": task.task_id, "summary": bullets[:3], "metrics": metrics})
+        self._emit("agent_completed", {"step": step})
         self._emit("agent_done" if not call.fallback_used else "agent_fallback", {"step": step})
 
     def _build_payload(self, critic_review: dict, red_review: dict) -> dict:
@@ -578,6 +599,7 @@ class ModelWorkbenchRunner:
             "criticReview": critic_review,
             "redReview": red_review,
             "reportVersions": self.report_versions,
+            "reviewRounds": self.review_rounds,
         }
 
     def _initial_step(self, task: WorkbenchTask) -> dict:
@@ -903,7 +925,7 @@ def build_model_workbench_payload(
     llm_client: BaseLLMClient | None = None,
     use_env_llm: bool = False,
     event_sink: EventSink | None = None,
-    red_blue_rounds: int = 1,
+    red_blue_rounds: int = 2,
 ) -> dict:
     question = question_text.strip()
     client = llm_client or _create_workbench_client(use_env_llm)

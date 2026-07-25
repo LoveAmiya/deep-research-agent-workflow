@@ -29,6 +29,8 @@ class ScriptedChineseLLMClient:
             '{"passed":false,"summary":"初稿可用，但建议补充评估指标。","checks":{"has_title":true,"has_references":true},"issues":["行动建议还可以更具体。"]}',
             '{"passed":false,"summary":"发现 1 个可修订问题。","issues":[{"issueId":"R1-1","severity":"medium","message":"行动建议缺少可执行指标。","evidence":"只说建立样例集。","suggestion":"补充 success rate、citation accuracy 和 trace coverage。"}]}',
             '{"revisedReportMarkdown":"# Research Report: 如何评估 Agentic Research Tools\\n\\n## 摘要\\n\\n这是一份中文最终版报告，覆盖结果质量、证据质量和过程可追踪性。\\n\\n## Key Findings（关键发现）\\n\\n- 需要同时评估结果质量和过程可追踪性。[C1]\\n\\n## 深入分析\\n\\nAgent（智能体）评估不能只看最终答案，还要看 Planner、Reader、Writer、Red/Blue 修改链路是否可解释。\\n\\n## 行动建议\\n\\n- 建立人工样例集。\\n- 记录 success rate（任务成功率）、citation accuracy（引用准确率）和 trace coverage（过程覆盖率）。\\n\\n## References（参考来源）\\n\\n- [C1] Agent 评估资料 https://example.com/agent-eval","fixedIssueIds":["R1-1"],"remainingIssueIds":[],"revisionNotes":["补充了可执行指标。"]}',
+            '{"passed":true,"summary":"Second review passed.","issues":[]}',
+            '{"revisedReportMarkdown":"# Research Report: Agentic Research Tools\\n\\n## Key Findings\\n\\n- Evaluate results and traceability. [C1]\\n\\n## References\\n\\n- [C1] Agent evaluation source https://example.com/agent-eval\\n\\n\\u4e2d\\u6587\\u6700\\u7ec8\\u7248\\u62a5\\u544a","fixedIssueIds":[],"remainingIssueIds":[],"revisionNotes":["Second independent review completed."]}',
         ]
         return SimpleNamespace(
             content=responses[len(self.calls) - 1],
@@ -104,11 +106,11 @@ class TestReportWorkbench(unittest.TestCase):
         payload = build_report_workbench_payload(
             "如何评估 Agentic Research Tools？",
             llm_client=client,
-            red_blue_rounds=1,
+            red_blue_rounds=2,
             event_sink=lambda event_type, data: events.append((event_type, data)),
         )
 
-        self.assertEqual(len(client.calls), len(TASK_ORDER))
+        self.assertEqual(len(client.calls), len(TASK_ORDER) + 2)
         self.assertEqual(payload["modelRun"]["fallbackCount"], 0)
         self.assertIn("中文最终版报告", payload["finalReportMarkdown"])
         self.assertTrue(all(step["status"] == "done" for step in payload["stepImpacts"]))
@@ -117,9 +119,22 @@ class TestReportWorkbench(unittest.TestCase):
         event_types = [event_type for event_type, _ in events]
         self.assertIn("run_started", event_types)
         self.assertIn("agent_started", event_types)
+        self.assertIn("review_round_started", event_types)
         self.assertIn("agent_done", event_types)
         self.assertIn("report_delta", event_types)
         self.assertEqual(event_types[-1], "run_completed")
+
+    def test_default_workbench_completes_at_least_two_review_rounds(self) -> None:
+        events = []
+
+        payload = build_report_workbench_payload(
+            "How should teams evaluate agentic research tools?",
+            event_sink=lambda event_type, data: events.append((event_type, data)),
+        )
+
+        self.assertEqual(len(payload["reviewRounds"]), 2)
+        self.assertEqual([item["round"] for item in payload["reviewRounds"]], [1, 2])
+        self.assertIn("review_round_started", [event_type for event_type, _ in events])
 
 
 if __name__ == "__main__":

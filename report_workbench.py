@@ -26,7 +26,7 @@ def build_report_workbench_payload(
     use_env_llm: bool = False,
     event_sink=None,
     legacy_pipeline: bool = False,
-    red_blue_rounds: int = 1,
+    red_blue_rounds: int = 2,
     **pipeline_kwargs: Any,
 ) -> dict:
     """运行流水线，并把内部产物转换为浏览器可用的数据。
