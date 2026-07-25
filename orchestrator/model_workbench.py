@@ -213,7 +213,6 @@ class ModelWorkbenchRunner:
                 {"label": "检索词 Search queries", "items": plan["searchQueries"]},
                 {"label": "预期章节 Expected sections", "items": plan["expectedSections"]},
             ],
-            output_preview=json.dumps(plan, ensure_ascii=False, indent=2),
         )
         return plan
 
@@ -248,7 +247,6 @@ class ModelWorkbenchRunner:
                     "items": [item.get("whyUseful") or item.get("snippet", "") for item in results[:4]],
                 }
             ],
-            output_preview=json.dumps(results, ensure_ascii=False, indent=2),
         )
         return results
 
@@ -289,7 +287,6 @@ class ModelWorkbenchRunner:
             highlights=[
                 {"label": "证据样例 Evidence samples", "items": [item.get("evidence", "") for item in findings[:4]]}
             ],
-            output_preview=json.dumps(findings, ensure_ascii=False, indent=2),
         )
         return findings
 
@@ -326,7 +323,6 @@ class ModelWorkbenchRunner:
             metrics=_markdown_metrics(markdown, findings),
             bullets=_headings(markdown),
             highlights=[{"label": "报告版本 Report version", "items": ["第一版初稿 Initial Draft"]}],
-            output_preview=markdown,
         )
         return markdown
 
@@ -375,7 +371,6 @@ class ModelWorkbenchRunner:
             highlights=[
                 {"label": "检查项 Checks", "items": [f"{key}: {value}" for key, value in review["checks"].items()]}
             ],
-            output_preview=json.dumps(review, ensure_ascii=False, indent=2),
         )
         return review
 
@@ -428,7 +423,6 @@ class ModelWorkbenchRunner:
                     "items": [item.get("suggestion", "") for item in issues if item.get("suggestion")],
                 }
             ],
-            output_preview=json.dumps(review, ensure_ascii=False, indent=2),
         )
         return review
 
@@ -484,7 +478,6 @@ class ModelWorkbenchRunner:
                 {"label": "已修复 issue id", "items": fixed},
                 {"label": "剩余 issue id", "items": remaining},
             ],
-            output_preview=revised,
         )
         return revised, {
             "fixedIssueIds": fixed,
@@ -540,7 +533,6 @@ class ModelWorkbenchRunner:
         metrics: dict,
         bullets: list[str],
         highlights: list[dict],
-        output_preview: str,
     ) -> None:
         step = self.steps[task.task_id]
         status = "fallback" if call.fallback_used else "done"
@@ -562,7 +554,6 @@ class ModelWorkbenchRunner:
                 "metrics": metrics,
                 "bullets": bullets,
                 "highlights": highlights,
-                "outputPreview": _trim(output_preview, 1800),
             }
         )
         self._trace(task, status, {"durationMs": call.duration_ms, "fallbackUsed": call.fallback_used})
@@ -614,7 +605,6 @@ class ModelWorkbenchRunner:
             "metrics": {},
             "bullets": [],
             "highlights": [],
-            "outputPreview": "",
             "fallbackUsed": False,
             "error": None,
         }

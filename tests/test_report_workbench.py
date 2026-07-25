@@ -144,6 +144,12 @@ class TestReportWorkbench(unittest.TestCase):
         self.assertEqual([item["round"] for item in payload["reviewRounds"]], [1, 2])
         self.assertIn("review_round_started", [event_type for event_type, _ in events])
 
+    def test_public_payload_exposes_agent_summaries_but_not_raw_output_previews(self) -> None:
+        payload = build_report_workbench_payload("How should teams evaluate agentic research tools?")
+
+        self.assertTrue(all("outputPreview" not in step for step in payload["stepImpacts"]))
+        self.assertTrue(all("bullets" in step and "highlights" in step for step in payload["stepImpacts"]))
+
 
 if __name__ == "__main__":
     unittest.main()
