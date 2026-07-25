@@ -127,6 +127,9 @@ class TestReportWorkbench(unittest.TestCase):
         self.assertIn("review_round_started", event_types)
         self.assertIn("agent_done", event_types)
         self.assertIn("report_delta", event_types)
+        self.assertLess(event_types.index("report_validated"), event_types.index("report_stream_start"))
+        self.assertLess(event_types.index("report_stream_done"), event_types.index("report_completed"))
+        self.assertLess(event_types.index("report_completed"), event_types.index("run_completed"))
         self.assertEqual(event_types[-1], "run_completed")
 
     def test_default_workbench_completes_at_least_two_review_rounds(self) -> None:
