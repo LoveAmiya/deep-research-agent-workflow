@@ -67,15 +67,22 @@ The workbench exposes the research process as inspectable artifacts:
 - Initial draft
 - Draft-to-final revision diff
 - Per-agent pipeline impact
+- At least two visible Red/Blue review handoffs
 - Findings and citation IDs
 - Citation validation result
-- API response payload for debugging and integration
+- Readable agent summaries, progress events, and a validated final-report stream
+
+The browser workbench does not render raw agent JSON or model output previews.
+The JSON API and SSE stream remain the machine-facing contracts; normal payloads
+contain agent summaries, metrics, review results, and reports rather than raw
+model input/output.
 
 API endpoints:
 
 ```text
 GET  /api/health
 POST /api/research
+POST /api/research/stream
 ```
 
 Example request:
