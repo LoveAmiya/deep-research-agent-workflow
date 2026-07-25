@@ -1,3 +1,4 @@
+import re
 from dataclasses import replace
 from typing import List
 
@@ -5,6 +6,7 @@ from agents.base_agent import AgentContext, AgentResult, BaseAgent
 from core.llm_client import LLMMessage
 from core.prompt_loader import load_prompt
 from core.schema import BlueRevisionResult, Finding, RedReviewResult, ResearchReport
+from core.structured_output import extract_json_object, string_list
 
 
 class BlueAgent(BaseAgent):
@@ -59,10 +61,31 @@ class BlueAgent(BaseAgent):
                 response = context.llm_client.generate(
                     [
                         LLMMessage(role="system", content=load_prompt("blue_agent")),
-                        LLMMessage(role="user", content=revised_report.markdown),
+                        LLMMessage(
+                            role="user",
+                            content=self._build_revision_request(revised_report, red_review, findings),
+                        ),
                     ]
                 )
-                revision_notes.append(f"LLM revision notes: {response.content}")
+                parsed = extract_json_object(response.content)
+                if parsed is None:
+                    raise ValueError("Blue LLM output was not a JSON object.")
+                candidate = str(
+                    parsed.get("revised_markdown") or parsed.get("revisedReportMarkdown") or ""
+                ).strip()
+                if candidate:
+                    revised_report = self._accept_model_revision(
+                        candidate,
+                        revised_report,
+                        findings,
+                        citation_registry,
+                    )
+                model_fixed = string_list(parsed.get("fixed_issue_ids") or parsed.get("fixedIssueIds"))
+                model_remaining = string_list(parsed.get("remaining_issue_ids") or parsed.get("remainingIssueIds"))
+                allowed_issue_ids = {issue.issue_id for issue in red_review.issues}
+                fixed_issue_ids = [issue_id for issue_id in model_fixed if issue_id in allowed_issue_ids]
+                remaining_issue_ids = [issue_id for issue_id in model_remaining if issue_id in allowed_issue_ids]
+                revision_notes.extend(string_list(parsed.get("revision_notes") or parsed.get("revisionNotes")))
                 used_llm = True
             except Exception as exc:
                 llm_error = str(exc)
@@ -91,6 +114,94 @@ class BlueAgent(BaseAgent):
             output=result,
             metadata=metadata,
         )
+
+    @staticmethod
+    def _build_revision_request(
+        report: ResearchReport,
+        red_review: RedReviewResult,
+        findings: List[Finding],
+    ) -> str:
+        issues = "\n".join(
+            f"- {issue.issue_id}: {issue.message}; suggestion: {issue.suggestion or ''}"
+            for issue in red_review.issues
+        ) or "- No blocking issues; improve clarity only."
+        approved = "\n".join(
+            f"- {finding.claim} [{finding.citation_id or finding.source_url}]"
+            for finding in findings
+        )
+        return (
+            "Return one JSON object with revised_markdown, fixed_issue_ids, remaining_issue_ids, and revision_notes. "
+            "Use only these approved findings and citation markers. Do not introduce a new citation marker.\n\n"
+            f"Approved findings:\n{approved}\n\nRed issues:\n{issues}\n\nCurrent report:\n{report.markdown}"
+        )
+
+    @classmethod
+    def _accept_model_revision(
+        cls,
+        markdown: str,
+        fallback_report: ResearchReport,
+        findings: List[Finding],
+        citation_registry=None,
+    ) -> ResearchReport:
+        allowed_citations = {
+            finding.citation_id for finding in findings if finding.citation_id
+        }
+        if citation_registry is not None:
+            allowed_citations.update(
+                citation.citation_id for citation in citation_registry.list_citations()
+            )
+        sanitized_lines = [
+            line for line in markdown.splitlines()
+            if not any(marker not in allowed_citations for marker in re.findall(r"\[([^\]]+)\]", line) if marker.startswith("C"))
+        ]
+        sanitized = "\n".join(sanitized_lines).strip()
+        required_sections = {"Background", "Key Findings", "Conclusion", "References"}
+        if not sanitized.startswith("# ") or any(f"## {section}" not in sanitized for section in required_sections):
+            return fallback_report
+        key_findings = cls._extract_section(sanitized, "Key Findings")
+        approved_markers = {f"[{citation_id}]" for citation_id in allowed_citations}
+        for line in key_findings.splitlines():
+            if not line.lstrip().startswith("-"):
+                continue
+            if not any(marker in line for marker in approved_markers):
+                return fallback_report
+        sections = [
+            {"title": section, "content": cls._extract_section(sanitized, section).strip()}
+            for section in ["Background", "Key Findings", "Conclusion", "References"]
+        ]
+        revised = replace(fallback_report, sections=sections, markdown=sanitized)
+        return cls._restore_registry_references(revised, citation_registry)
+
+    @staticmethod
+    def _restore_registry_references(report: ResearchReport, citation_registry=None) -> ResearchReport:
+        if citation_registry is None:
+            return report
+        references = citation_registry.to_references_markdown()
+        if not references:
+            return report
+        marker = "## References"
+        start = report.markdown.find(marker)
+        if start < 0:
+            markdown = report.markdown.rstrip() + f"\n\n{marker}\n\n{references}"
+        else:
+            markdown = report.markdown[:start].rstrip() + f"\n\n{marker}\n\n{references}"
+        sections = [
+            {"title": section["title"], "content": references if section["title"] == "References" else section["content"]}
+            for section in report.sections
+        ]
+        if not any(section["title"] == "References" for section in sections):
+            sections.append({"title": "References", "content": references})
+        return replace(report, sections=sections, markdown=markdown)
+
+    @staticmethod
+    def _extract_section(markdown: str, title: str) -> str:
+        heading = f"## {title}"
+        start = markdown.find(heading)
+        if start < 0:
+            return ""
+        content_start = start + len(heading)
+        next_heading = markdown.find("\n## ", content_start)
+        return markdown[content_start:] if next_heading < 0 else markdown[content_start:next_heading]
 
     def _revise_report(
         self,

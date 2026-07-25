@@ -2,6 +2,7 @@ from agents.base_agent import AgentContext, AgentResult, BaseAgent
 from core.llm_client import LLMMessage
 from core.prompt_loader import load_prompt
 from core.schema import ResearchPlan, ResearchQuestion
+from core.structured_output import extract_json_object, string_list
 
 
 class PlannerAgent(BaseAgent):
@@ -48,14 +49,29 @@ class PlannerAgent(BaseAgent):
         if context.llm_client is not None:
             try:
                 prompt = load_prompt("planner")
-                context.llm_client.generate(
+                response = context.llm_client.generate(
                     [
                         LLMMessage(role="system", content=prompt),
                         LLMMessage(role="user", content=f"Research question: {base_question}"),
                     ]
                 )
+                parsed = extract_json_object(response.content)
+                if parsed is None:
+                    raise ValueError("Planner LLM output was not a JSON object.")
+                model_sub_questions = string_list(parsed.get("sub_questions") or parsed.get("subQuestions"))
+                model_search_queries = string_list(parsed.get("search_queries") or parsed.get("searchQueries"))
+                model_sections = string_list(parsed.get("expected_sections") or parsed.get("expectedSections"))
+                if not model_sub_questions or not model_search_queries or not model_sections:
+                    raise ValueError("Planner LLM output omitted required plan fields.")
+                plan = ResearchPlan(
+                    question=base_question,
+                    sub_questions=model_sub_questions[:6],
+                    search_queries=model_search_queries[:6],
+                    expected_sections=model_sections[:8],
+                    question_id=question.question_id,
+                    objective=str(parsed.get("objective") or plan.objective),
+                )
                 metadata["used_llm"] = True
-                metadata["fallback_used"] = True
             except Exception as exc:
                 metadata["llm_error"] = str(exc)
                 metadata["fallback_used"] = True

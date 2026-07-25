@@ -99,7 +99,7 @@ class RedBlueLoopRunner:
                     },
                     metadata={"round_index": round_index},
                     memory=context.memory,
-                    llm_client=None,
+                    llm_client=context.llm_client,
                 )
             )
             if not red_result.success:
@@ -162,7 +162,7 @@ class RedBlueLoopRunner:
                     },
                     metadata={"round_index": round_index},
                     memory=context.memory,
-                    llm_client=None,
+                    llm_client=context.llm_client,
                 )
             )
             if not blue_result.success:

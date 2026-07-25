@@ -259,8 +259,9 @@ class TestLLMClient(unittest.TestCase):
 
         self.assertTrue(result.success)
         self.assertEqual(len(result.output.search_queries), 3)
-        self.assertTrue(result.metadata["used_llm"])
+        self.assertFalse(result.metadata["used_llm"])
         self.assertTrue(result.metadata["fallback_used"])
+        self.assertIn("not a JSON object", result.metadata["llm_error"])
 
     def test_writer_with_mock_llm_still_generates_report(self) -> None:
         pipeline_result = run_research_pipeline(

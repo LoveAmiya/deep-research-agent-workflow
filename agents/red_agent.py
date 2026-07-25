@@ -2,6 +2,7 @@ from agents.base_agent import AgentContext, AgentResult, BaseAgent
 from core.llm_client import LLMMessage
 from core.prompt_loader import load_prompt
 from core.schema import Finding, RedReviewResult, ResearchReport, ReviewIssue
+from core.structured_output import extract_json_object
 from tools.citation_tool import CitationValidator
 
 
@@ -92,14 +93,19 @@ class RedAgent(BaseAgent):
                 1 if key_findings_section.startswith("- ") else 0
             )
             citation_marker_count = key_findings_section.count("[C")
-            if bullet_count < len(findings):
+            distinct_claim_count = len({
+                finding.claim.strip().lower()
+                for finding in findings
+                if finding.claim.strip()
+            })
+            if bullet_count < distinct_claim_count:
                 issues.append(
                     ReviewIssue(
                         issue_id=f"red-{issue_index}",
                         category="evidence",
                         severity="low" if bullet_count > 0 else "medium",
                         message="Key Findings appears to summarize fewer items than the findings list.",
-                        evidence=f"key_findings_bullets={bullet_count}, findings={len(findings)}",
+                        evidence=f"key_findings_bullets={bullet_count}, unique_findings={distinct_claim_count}",
                         suggestion="Expand Key Findings to reflect the available findings.",
                     )
                 )
@@ -184,10 +190,44 @@ class RedAgent(BaseAgent):
                 response = context.llm_client.generate(
                     [
                         LLMMessage(role="system", content=load_prompt("red_agent")),
-                        LLMMessage(role="user", content=report.markdown),
+                        LLMMessage(
+                            role="user",
+                            content=self._build_review_request(report, findings, critic_review),
+                        ),
                     ]
                 )
-                metadata["llm_review_notes"] = response.content
+                parsed = extract_json_object(response.content)
+                if parsed is None:
+                    raise ValueError("Red LLM output was not a JSON object.")
+                issues.extend(self._model_issues(parsed.get("issues"), issue_index))
+                if parsed.get("summary"):
+                    metadata["llm_review_notes"] = str(parsed["summary"])
+                if issues:
+                    result = RedReviewResult(
+                        passed=False,
+                        issues=issues,
+                        summary=str(parsed.get("summary") or f"Found {len(issues)} issue(s) in the report review."),
+                    )
+                elif parsed.get("passed") is False:
+                    result = RedReviewResult(
+                        passed=False,
+                        issues=[
+                            ReviewIssue(
+                                issue_id=f"red-model-{issue_index}",
+                                category="logic",
+                                severity="medium",
+                                message="Model review reported a concern without a concrete issue.",
+                                suggestion="Provide a concrete, evidence-backed review issue.",
+                            )
+                        ],
+                        summary=str(parsed.get("summary") or "Model review requires follow-up."),
+                    )
+                elif parsed.get("summary"):
+                    result = RedReviewResult(
+                        passed=True,
+                        issues=[],
+                        summary=str(parsed["summary"]),
+                    )
                 metadata["used_llm"] = True
             except Exception as exc:
                 metadata["llm_error"] = str(exc)
@@ -198,6 +238,47 @@ class RedAgent(BaseAgent):
             success=True,
             output=result,
             metadata=metadata,
+        )
+
+    @staticmethod
+    def _model_issues(value, start_index: int) -> list[ReviewIssue]:
+        if not isinstance(value, list):
+            return []
+        parsed_issues = []
+        for index, item in enumerate(value, start=start_index):
+            if not isinstance(item, dict):
+                continue
+            message = str(item.get("message") or "").strip()
+            if not message:
+                continue
+            severity = str(item.get("severity") or "medium").lower()
+            if severity not in {"low", "medium", "high"}:
+                severity = "medium"
+            parsed_issues.append(
+                ReviewIssue(
+                    issue_id=str(item.get("issue_id") or item.get("issueId") or f"red-model-{index}"),
+                    category=str(item.get("category") or "logic"),
+                    severity=severity,
+                    message=message,
+                    evidence=str(item.get("evidence") or "") or None,
+                    suggestion=str(item.get("suggestion") or "") or None,
+                )
+            )
+        return parsed_issues
+
+    @staticmethod
+    def _build_review_request(report, findings, critic_review) -> str:
+        approved = "\n".join(
+            f"- {finding.claim} [{finding.citation_id or finding.source_url}]"
+            for finding in findings
+        )
+        critic_issues = []
+        if isinstance(critic_review, dict):
+            critic_issues = critic_review.get("issues", []) or []
+        return (
+            f"Approved findings:\n{approved}\n\n"
+            f"Critic issues:\n{critic_issues}\n\n"
+            f"Report:\n{report.markdown}"
         )
 
     @staticmethod

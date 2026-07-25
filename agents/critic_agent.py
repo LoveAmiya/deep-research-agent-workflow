@@ -2,6 +2,7 @@ from agents.base_agent import AgentContext, AgentResult, BaseAgent
 from core.llm_client import LLMMessage
 from core.prompt_loader import load_prompt
 from core.schema import ResearchReport
+from core.structured_output import extract_json_object, string_list
 from tools.citation_tool import CitationValidator
 
 
@@ -71,10 +72,26 @@ class CriticAgent(BaseAgent):
                 response = context.llm_client.generate(
                     [
                         LLMMessage(role="system", content=load_prompt("critic")),
-                        LLMMessage(role="user", content=report.markdown),
+                        LLMMessage(
+                            role="user",
+                            content=(
+                                f"Report:\n{report.markdown}\n\n"
+                                f"Approved finding count: {len(findings)}"
+                            ),
+                        ),
                     ]
                 )
-                review["llm_notes"] = response.content
+                parsed = extract_json_object(response.content)
+                if parsed is None:
+                    raise ValueError("Critic LLM output was not a JSON object.")
+                model_issues = string_list(parsed.get("issues"))
+                review["issues"] = list(dict.fromkeys([*review["issues"], *model_issues]))
+                model_checks = parsed.get("checks")
+                if isinstance(model_checks, dict):
+                    review["checks"].update(model_checks)
+                if model_issues or parsed.get("passed") is False:
+                    review["passed"] = False
+                review["llm_notes"] = str(parsed.get("summary") or "")
                 metadata["used_llm"] = True
             except Exception as exc:
                 metadata["llm_error"] = str(exc)

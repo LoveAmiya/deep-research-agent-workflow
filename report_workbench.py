@@ -57,6 +57,8 @@ def build_report_workbench_payload(
             llm_client = create_llm_client(llm_config)
             pipeline_kwargs["llm_client"] = llm_client
             collaborative_mode = "collaborative_dag_llm"
+    if llm_client is not None:
+        pipeline_kwargs["require_llm"] = True
     if event_sink is not None:
         event_sink(
             "run_started",
@@ -77,7 +79,7 @@ def build_report_workbench_payload(
     pipeline_kwargs["event_sink"] = event_sink
     result = run_research_pipeline(question, **pipeline_kwargs)
     payload = summarize_pipeline_result(result)
-    payload["modelRun"]["mode"] = collaborative_mode
+    payload["modelRun"]["mode"] = collaborative_mode if payload["modelRun"]["llmCallCount"] else "collaborative_dag_deterministic"
     if event_sink is not None:
         for review in payload["reviewRounds"]:
             event_sink("review_round_started", {"round": review["round"], "maxRounds": review_rounds})
@@ -108,6 +110,26 @@ def summarize_pipeline_result(result: dict) -> dict:
     ]
     for step in step_impacts:
         step.pop("outputPreview", None)
+    agent_results = [
+        value for value in outputs.values()
+        if isinstance(value, AgentResult)
+    ]
+    fallback_count = sum(bool(value.metadata.get("fallback_used")) for value in agent_results)
+    llm_count = sum(bool(value.metadata.get("used_llm")) for value in agent_results)
+    degradation_reasons = []
+    if fallback_count:
+        degradation_reasons.extend(
+            f"{value.agent_name}: {value.metadata.get('llm_error') or value.metadata.get('search_error') or value.metadata.get('fetch_error') or '本地规则兜底'}"
+            for value in agent_results
+            if value.metadata.get("fallback_used")
+        )
+    search_metadata = outputs.get("search_task")
+    if isinstance(search_metadata, AgentResult) and search_metadata.metadata.get("search_provider") in {
+        "mock", "deterministic_mock"
+    }:
+        degradation_reasons.append("来源发现使用了模拟/确定性来源，不能作为真实研究结论。")
+    if llm_count == 0:
+        degradation_reasons.append("本次运行没有成功消费任何模型输出。")
     return {
         "success": bool(result.get("success")),
         "runId": result.get("run_id"),
@@ -116,7 +138,12 @@ def summarize_pipeline_result(result: dict) -> dict:
         "initialReportMarkdown": initial_markdown,
         "reportDiffSummary": diff_summary,
         "reportMetrics": _report_metrics(final_report, initial_report, result),
-        "modelRun": {"mode": "collaborative_dag", "fallbackCount": 0},
+        "modelRun": {
+            "mode": "collaborative_dag_llm" if llm_count else "collaborative_dag_deterministic",
+            "fallbackCount": fallback_count,
+            "llmCallCount": llm_count,
+        },
+        "degradationReasons": degradation_reasons,
         "stepImpacts": step_impacts,
         "findings": [_summarize_finding(finding) for finding in result.get("findings", [])],
         "citationValidation": _to_jsonable(result.get("citation_validation", {})),
@@ -211,6 +238,13 @@ def _summarize_step(
         "highlights": [],
         "outputPreview": "",
     }
+    if isinstance(agent_result, AgentResult):
+        metadata = agent_result.metadata or {}
+        step["mode"] = "llm" if metadata.get("used_llm") and not metadata.get("fallback_used") else (
+            "local_fallback" if metadata.get("fallback_used") else "deterministic"
+        )
+        step["fallbackUsed"] = bool(metadata.get("fallback_used"))
+        step["error"] = metadata.get("llm_error") or metadata.get("search_error") or metadata.get("fetch_error")
 
     if isinstance(output, ResearchPlan):
         step["impactOnFinalReport"] = "确定报告要回答的子问题、检索词和章节骨架，后续 Agent 都沿着这份计划工作。"
@@ -802,11 +836,12 @@ INDEX_HTML = """<!doctype html>
       if (event === "run_completed") {
         renderPayload(data.payload);
         const fallbackCount = data.payload?.modelRun?.fallbackCount || 0;
-        if (fallbackCount) {
+        const degradationReasons = data.payload?.degradationReasons || [];
+        if (fallbackCount || degradationReasons.length) {
           const firstError = firstStepError(data.payload?.stepImpacts || []);
           statusEl.textContent = firstError
-            ? `报告已生成，但有 ${fallbackCount} 个 Agent 使用了本地兜底。首个失败原因：${firstError}`
-            : `报告已生成，但有 ${fallbackCount} 个 Agent 使用了本地兜底。`;
+            ? `报告已生成，但需要复查。首个问题：${firstError}`
+            : `报告已生成，但需要复查：${degradationReasons[0] || "部分步骤未使用真实模型或来源"}`;
         } else {
           statusEl.textContent = "报告已生成：全部 Agent 均完成模型调用。";
         }

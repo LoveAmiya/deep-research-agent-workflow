@@ -1,9 +1,11 @@
+import re
 from typing import List
 
 from agents.base_agent import AgentContext, AgentResult, BaseAgent
 from core.llm_client import LLMMessage
 from core.prompt_loader import load_prompt
 from core.schema import Finding, ResearchPlan, ResearchQuestion, ResearchReport
+from core.structured_output import extract_json_object
 
 
 class WriterAgent(BaseAgent):
@@ -67,24 +69,28 @@ class WriterAgent(BaseAgent):
                     ]
                 )
                 candidate = response.content.strip()
-                required_markers = [f"[{citation_id}]" for citation_id in citation_ids]
-                has_required_citations = (
-                    all(reference in candidate for reference in references)
-                    if not citation_ids
-                    else all(marker in candidate for marker in required_markers)
+                metadata["llm_output_shape"] = self._model_output_shape(candidate)
+                validation_diagnostics = {}
+                accepted = self._normalize_model_markdown(
+                    candidate,
+                    findings,
+                    citation_registry,
+                    validation_diagnostics,
                 )
-                if has_required_citations and "## References" in candidate:
-                    markdown = candidate
+                metadata["llm_output_shape"].update(validation_diagnostics)
+                if accepted is not None:
+                    markdown, sections = accepted
                     metadata["used_llm"] = True
                 else:
                     metadata["used_llm"] = True
                     metadata["fallback_used"] = True
-                    metadata["llm_error"] = "LLM output omitted required citations or References section."
+                    metadata["llm_error"] = "LLM output was not a usable report or contained unsupported citations."
             except Exception as exc:
                 metadata["llm_error"] = str(exc)
                 metadata["fallback_used"] = True
 
-        sections = self._build_sections(question, findings, use_citation_markers=citation_registry is not None)
+        if markdown is None:
+            sections = self._build_sections(question, findings, use_citation_markers=citation_registry is not None)
         if markdown is None:
             markdown = self._build_markdown(question, sections, references, citation_registry)
             if context.llm_client is not None:
@@ -135,6 +141,175 @@ class WriterAgent(BaseAgent):
             {"title": "Key Findings", "content": "\n".join(key_findings_lines)},
             {"title": "Conclusion", "content": conclusion},
         ]
+
+    @classmethod
+    def _accept_model_markdown(
+        cls,
+        markdown: str,
+        findings: List[Finding],
+        citation_registry=None,
+        diagnostics: dict | None = None,
+    ):
+        diagnostics = diagnostics if diagnostics is not None else {}
+        required_sections = ["Background", "Key Findings", "Conclusion", "References"]
+        if not markdown.startswith("# ") or any(f"## {section}" not in markdown for section in required_sections):
+            diagnostics["validation_error"] = "missing_required_sections"
+            return None
+        allowed = {finding.citation_id for finding in findings if finding.citation_id}
+        if citation_registry is not None:
+            allowed.update(citation.citation_id for citation in citation_registry.list_citations())
+        markers = set(re.findall(r"\[(C[^\]]+)\]", markdown))
+        if not markers.issubset(allowed):
+            diagnostics["validation_error"] = "unknown_citation_marker"
+            return None
+        key_findings = cls._extract_section(markdown, "Key Findings")
+        bullets = [line.strip() for line in key_findings.splitlines() if line.strip().startswith("-")]
+        distinct_claim_count = len({finding.claim.strip().lower() for finding in findings if finding.claim.strip()})
+        if len(bullets) < distinct_claim_count:
+            diagnostics["validation_error"] = "too_few_key_finding_bullets"
+            return None
+        allowed_markers = {f"[{citation_id}]" for citation_id in allowed}
+        if findings and any(not any(marker in bullet for marker in allowed_markers) for bullet in bullets):
+            diagnostics["validation_error"] = "uncited_key_finding_bullet"
+            return None
+        sections = [
+            {"title": section, "content": cls._extract_section(markdown, section).strip()}
+            for section in required_sections
+        ]
+        return markdown.strip(), sections
+
+    @classmethod
+    def _normalize_model_markdown(
+        cls,
+        markdown: str,
+        findings: List[Finding],
+        citation_registry=None,
+        diagnostics: dict | None = None,
+    ):
+        """Keep model prose, but deterministically rebuild factual finding and reference blocks."""
+        markdown = cls._canonicalize_model_markdown(markdown)
+        required_sections = ["Background", "Key Findings", "Conclusion"]
+        if not markdown.startswith("# ") or any(f"## {section}" not in markdown for section in required_sections):
+            if diagnostics is not None:
+                diagnostics["validation_error"] = "unrecognized_report_structure"
+            return None
+        allowed = {finding.citation_id for finding in findings if finding.citation_id}
+        if citation_registry is not None:
+            allowed.update(citation.citation_id for citation in citation_registry.list_citations())
+        markers = set(re.findall(r"\[(C[^\]]+)\]", markdown))
+        if not markers.issubset(allowed):
+            if diagnostics is not None:
+                diagnostics["validation_error"] = "unknown_citation_marker_before_normalization"
+            return None
+
+        key_start = markdown.find("## Key Findings")
+        next_heading = markdown.find("\n## ", key_start + len("## Key Findings"))
+        key_end = len(markdown) if next_heading < 0 else next_heading
+        key_body = markdown[key_start + len("## Key Findings") : key_end].strip()
+        model_bullets = [line.strip() for line in key_body.splitlines() if line.strip().startswith("-")]
+        rebuilt_bullets = []
+        for line in model_bullets:
+            matching = next((finding for finding in findings if finding.claim.lower() in line.lower()), None)
+            if matching is None:
+                continue
+            marker = f"[{matching.citation_id}]" if matching.citation_id else ""
+            if marker and marker not in line:
+                line = f"{line.rstrip('.')} {marker}"
+            rebuilt_bullets.append(line)
+        for finding in findings:
+            if not any(finding.claim.lower() in line.lower() for line in rebuilt_bullets):
+                marker = f" [{finding.citation_id}]" if finding.citation_id else ""
+                rebuilt_bullets.append(f"- {finding.claim}{marker}")
+        if findings and not rebuilt_bullets:
+            if diagnostics is not None:
+                diagnostics["validation_error"] = "no_rebuildable_key_findings"
+            return None
+        normalized = markdown[:key_start] + "## Key Findings\n\n" + "\n".join(rebuilt_bullets) + markdown[key_end:]
+        references = citation_registry.to_references_markdown() if citation_registry is not None else ""
+        if not references:
+            references = "\n".join(
+                f"[{finding.citation_id}] {finding.source_url}"
+                for finding in findings if finding.citation_id
+            )
+        if "## References" not in normalized:
+            normalized = normalized.rstrip() + "\n\n## References\n\n" + references
+        elif references:
+            reference_start = normalized.find("## References")
+            reference_body = normalized[reference_start:]
+            missing_lines = [line for line in references.splitlines() if line not in reference_body]
+            if missing_lines:
+                normalized = normalized.rstrip() + "\n" + "\n".join(missing_lines)
+        return cls._accept_model_markdown(normalized, findings, citation_registry, diagnostics)
+
+    @staticmethod
+    def _canonicalize_model_markdown(markdown: str) -> str:
+        normalized = str(markdown or "").strip()
+        json_envelope = extract_json_object(normalized)
+        if isinstance(json_envelope, dict):
+            normalized = str(
+                json_envelope.get("markdown")
+                or json_envelope.get("report_markdown")
+                or json_envelope.get("revised_markdown")
+                or normalized
+            ).strip()
+        if normalized.startswith("```"):
+            normalized = normalized.split("\n", 1)[1] if "\n" in normalized else ""
+            if normalized.rstrip().endswith("```"):
+                normalized = normalized.rstrip()[:-3].rstrip()
+        normalized = normalized.replace("【", "[").replace("】", "]")
+        aliases = {
+            "Background": ["background", "背景", "研究背景", "概述", "摘要"],
+            "Key Findings": ["key findings", "findings", "关键发现", "主要发现", "核心发现", "研究发现"],
+            "Conclusion": ["conclusion", "总结", "结论", "建议", "行动建议"],
+            "References": ["references", "reference", "参考文献", "参考来源", "来源"],
+        }
+        lines = []
+        for raw_line in normalized.splitlines():
+            heading = re.match(r"^#{1,6}\s*(.+?)\s*$", raw_line)
+            bold_heading = re.match(r"^\*\*(.+?)\*\*\s*$", raw_line)
+            title = (heading or bold_heading).group(1).strip() if heading or bold_heading else ""
+            if title:
+                comparison = title.lower()
+                canonical = next(
+                    (
+                        section for section, values in aliases.items()
+                        if any(value.lower() in comparison for value in values)
+                    ),
+                    None,
+                )
+                if canonical:
+                    lines.append(f"## {canonical}")
+                    continue
+            lines.append(raw_line)
+        normalized = "\n".join(lines).strip()
+        if not normalized.startswith("# ") and any(f"## {section}" in normalized for section in aliases):
+            normalized = "# Research Report\n\n" + normalized
+        return normalized
+
+    @classmethod
+    def _model_output_shape(cls, value: str) -> dict:
+        canonical = cls._canonicalize_model_markdown(value)
+        envelope = extract_json_object(value)
+        return {
+            "length": len(value),
+            "json_envelope": isinstance(envelope, dict),
+            "canonical_title": canonical.startswith("# "),
+            "canonical_sections": [
+                section for section in ["Background", "Key Findings", "Conclusion", "References"]
+                if f"## {section}" in canonical
+            ],
+            "citation_ids": sorted(set(re.findall(r"\[(C[^\]]+)\]", canonical))),
+        }
+
+    @staticmethod
+    def _extract_section(markdown: str, title: str) -> str:
+        heading = f"## {title}"
+        start = markdown.find(heading)
+        if start < 0:
+            return ""
+        content_start = start + len(heading)
+        next_heading = markdown.find("\n## ", content_start)
+        return markdown[content_start:] if next_heading < 0 else markdown[content_start:next_heading]
 
     @staticmethod
     def _unique_references(findings: List[Finding]) -> List[str]:
@@ -200,7 +375,8 @@ class WriterAgent(BaseAgent):
         references: List[str],
     ) -> str:
         finding_lines = "\n".join(
-            f"- Claim: {finding.claim}\n  Evidence: {finding.evidence}\n  Source: {finding.source_url}"
+            f"- Claim: {finding.claim}\n  Evidence: {finding.evidence}\n"
+            f"  Citation: [{finding.citation_id or finding.source_url}]\n  Source: {finding.source_url}"
             for finding in findings
         )
         reference_lines = "\n".join(f"- {reference}" for reference in references)

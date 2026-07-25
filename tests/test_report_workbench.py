@@ -234,7 +234,7 @@ class TestReportWorkbench(unittest.TestCase):
         )
 
         event_types = [event_type for event_type, _ in events]
-        self.assertEqual(payload["modelRun"]["mode"], "collaborative_dag")
+        self.assertEqual(payload["modelRun"]["mode"], "collaborative_dag_deterministic")
         self.assertGreaterEqual(payload["ledgerSummary"]["artifactCount"], len(TASK_ORDER))
         self.assertGreaterEqual(len(payload["handoffs"]), len(TASK_ORDER) - 1)
         self.assertGreaterEqual(len(payload["reviewRounds"]), 2)
@@ -251,6 +251,13 @@ class TestReportWorkbench(unittest.TestCase):
         self.assertIn("renderHandoffs(currentHandoffs)", INDEX_HTML)
         self.assertNotIn("JSON.stringify(payload.ledger", INDEX_HTML)
         self.assertNotIn("executionTrace", INDEX_HTML)
+
+    def test_deterministic_collaboration_is_explicitly_marked_as_degraded(self) -> None:
+        payload = build_report_workbench_payload("What affects enterprise LLM adoption?")
+
+        self.assertEqual(payload["modelRun"]["mode"], "collaborative_dag_deterministic")
+        self.assertIn("本次运行没有成功消费任何模型输出。", payload["degradationReasons"])
+        self.assertTrue(any("模拟/确定性来源" in reason for reason in payload["degradationReasons"]))
 
     def test_public_payload_exposes_agent_summaries_but_not_raw_output_previews(self) -> None:
         payload = build_report_workbench_payload("How should teams evaluate agentic research tools?")

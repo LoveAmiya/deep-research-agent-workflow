@@ -1,4 +1,5 @@
 from agents.base_agent import AgentContext
+from agents.base_agent import AgentResult
 from agents.blue_agent import BlueAgent
 from agents.critic_agent import CriticAgent
 from agents.planner_agent import PlannerAgent
@@ -7,7 +8,7 @@ from agents.red_agent import RedAgent
 from agents.red_blue_loop import RedBlueLoopConfig, RedBlueLoopRunner
 from agents.searcher_agent import SearcherAgent
 from agents.writer_agent import WriterAgent
-from core.schema import ResearchQuestion
+from core.schema import ResearchQuestion, ResearchReport
 from memory.store import SharedMemory
 from memory.research_ledger import ResearchLedger
 from memory.integration import persist_pipeline_result_to_vector_memory
@@ -104,6 +105,7 @@ def run_research_pipeline(
     force_synthesis_on_replan_exhausted: bool = True,
     vector_memory_store=None,
     event_sink=None,
+    require_llm: bool = False,
 ) -> dict:
     """运行同步端到端流水线，并返回可检查的全部产物。
 
@@ -134,6 +136,7 @@ def run_research_pipeline(
         ),
         checkpoint=checkpoint,
         event_sink=event_sink,
+        require_llm=require_llm,
     )
     graph = components["graph"]
     handlers = components["handlers"]
@@ -165,6 +168,7 @@ def run_research_pipeline(
         resume_missing=resume_missing,
         ledger=ledger,
         event_sink=event_sink,
+        llm_client=llm_client,
     )
     if vector_memory_store is not None:
         result["vector_memory_ids"] = persist_pipeline_result_to_vector_memory(
@@ -188,6 +192,7 @@ def build_research_pipeline_components(
     ledger: ResearchLedger | None = None,
     checkpoint: RunCheckpoint | None = None,
     event_sink=None,
+    require_llm: bool = False,
 ) -> dict:
     """创建 Agent 与 handler，将 DAG 输出转换为下游输入。
 
@@ -227,6 +232,14 @@ def build_research_pipeline_components(
             )
         context.ledger = ledger
         result = agent.run(context)
+        if require_llm and result.success and result.metadata.get("fallback_used"):
+            result = AgentResult(
+                agent_name=agent.name,
+                success=False,
+                output=result.output,
+                error=result.metadata.get("llm_error") or "Required LLM output was unavailable or invalid.",
+                metadata=result.metadata,
+            )
         if result.success:
             artifact = ledger.publish(
                 artifact_type=artifact_type,
@@ -261,7 +274,7 @@ def build_research_pipeline_components(
         return AgentContext(
             task_id=task_id,
             inputs=inputs,
-            metadata={"agent_name": agent_name},
+            metadata={"agent_name": agent_name, "require_llm": require_llm},
             memory=memory,
             llm_client=llm_client,
             ledger=ledger,
@@ -500,19 +513,25 @@ def build_research_pipeline_result(
     resume_missing: bool = False,
     ledger: ResearchLedger | None = None,
     event_sink=None,
+    llm_client=None,
 ) -> dict:
     outputs = execution.outputs
     ledger = ledger or ResearchLedger()
-    blue_revision = outputs["blue_revision_task"].output
+    blue_result = outputs.get("blue_revision_task")
+    writer_result = outputs.get("writer_task")
+    blue_revision = getattr(blue_result, "output", None) if getattr(blue_result, "success", False) else None
+    writer_report = getattr(writer_result, "output", None) if getattr(writer_result, "success", False) else None
     red_blue_loop_result = None
-    final_report = blue_revision.revised_report
+    final_report = getattr(blue_revision, "revised_report", None) or writer_report
+    if not isinstance(final_report, ResearchReport):
+        final_report = _build_degraded_report(question, execution)
     _restore_side_effects_from_outputs(
         outputs=outputs,
         memory=memory,
         citation_registry=citation_registry,
         execution_metadata=getattr(execution, "metadata", {}),
     )
-    if use_red_blue_loop:
+    if use_red_blue_loop and isinstance(writer_report, ResearchReport):
         red_blue_loop_result = RedBlueLoopRunner(
             red_agent=RedAgent(),
             blue_agent=BlueAgent(),
@@ -523,10 +542,11 @@ def build_research_pipeline_result(
                 inputs={"citation_registry": citation_registry},
                 metadata={"agent_name": "RedBlueLoopRunner"},
                 memory=memory,
+                llm_client=llm_client,
             ),
-            report=outputs["writer_task"].output,
+            report=final_report,
             findings=outputs["reader_task"].output,
-            critic_review=outputs["critic_task"].output,
+            critic_review=None,
         )
         final_report = red_blue_loop_result.final_report
         _record_red_blue_loop_handoffs(ledger, red_blue_loop_result)
@@ -546,10 +566,10 @@ def build_research_pipeline_result(
         "question": question,
         "report": final_report,
         "final_report": final_report,
-        "initial_report": outputs["writer_task"].output,
-        "findings": outputs["reader_task"].output,
-        "critic_review": outputs["critic_task"].output,
-        "red_review": outputs["red_review_task"].output,
+        "initial_report": writer_report,
+        "findings": getattr(outputs.get("reader_task"), "output", []) or [],
+        "critic_review": getattr(outputs.get("critic_task"), "output", None),
+        "red_review": getattr(outputs.get("red_review_task"), "output", None),
         "blue_revision": blue_revision,
         "red_blue_loop_result": red_blue_loop_result,
         "memory_items": memory.to_dict_list(),
@@ -606,6 +626,41 @@ def _record_red_blue_loop_handoffs(ledger: ResearchLedger, loop_result) -> None:
                 reason=f"第 {round_result.round_index} 轮修订等待复核。",
             )
             report_dependencies = [blue_artifact.artifact_id]
+
+
+def _build_degraded_report(question: ResearchQuestion, execution) -> ResearchReport:
+    failed = [
+        task_id for task_id, state in execution.states.items()
+        if getattr(state, "value", state) == "FAILED"
+    ]
+    reason = (
+        f"上游 Agent 未完成：{', '.join(failed)}。"
+        if failed
+        else "研究链路未产生足够的报告工件。"
+    )
+    sections = [
+        {"title": "Background", "content": f"本次研究未能完成真实报告生成。{reason}"},
+        {"title": "Key Findings", "content": "证据不足，未生成可作为研究结论的事实发现。"},
+        {"title": "Conclusion", "content": "请检查模型配置、上游 Agent 错误和可用来源后重新运行。"},
+        {"title": "References", "content": "暂无已验证参考来源。"},
+    ]
+    markdown = "\n\n".join(
+        [
+            f"# Research Report: {question.question}",
+            *[f"## {section['title']}\n\n{section['content']}" for section in sections],
+        ]
+    )
+    return ResearchReport(
+        title=f"Research Report: {question.question}",
+        question=question.question,
+        sections=sections,
+        citations=[],
+        markdown=markdown,
+        question_id=question.question_id,
+        summary="降级报告：上游 Agent 未完成。",
+        findings=[],
+        references=[],
+    )
 
 
 def _restore_side_effects_from_outputs(
