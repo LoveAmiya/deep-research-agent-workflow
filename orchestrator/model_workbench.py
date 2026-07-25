@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from difflib import unified_diff
 import json
+import re
 import time
 import uuid
 from typing import Any, Callable
@@ -32,6 +33,8 @@ class StepCall:
     fallback_used: bool = False
     error: str | None = None
     duration_ms: int = 0
+    native_stream_used: bool = False
+    visible_streamed: bool = False
 
 
 MODEL_TASKS = [
@@ -125,7 +128,6 @@ class ModelWorkbenchRunner:
         self.report_versions.append(
             {"label": "初稿 Initial Draft", "round": 0, "markdown": self.initial_report_markdown}
         )
-        self._emit_markdown_stream("initialDraft", self.initial_report_markdown)
 
         critic_review = self._run_critic(self.initial_report_markdown, self.findings)
         current_report = self.initial_report_markdown
@@ -134,14 +136,12 @@ class ModelWorkbenchRunner:
         for round_index in range(1, self.red_blue_rounds + 1):
             self._emit("review_round_started", {"round": round_index, "maxRounds": self.red_blue_rounds})
             red_review = self._run_red(round_index, current_report, critic_review)
-            self._emit_text_stream("reviewTranscript", self._red_review_text(red_review, round_index))
             current_report, blue_revision = self._run_blue(
                 round_index,
                 current_report,
                 red_review,
                 self.findings,
             )
-            self._emit_text_stream("reviewTranscript", self._blue_revision_text(blue_revision, round_index))
             self.report_versions.append(
                 {"label": f"第 {round_index} 轮修订", "round": round_index, "markdown": current_report}
             )
@@ -319,6 +319,8 @@ class ModelWorkbenchRunner:
                 {"markdown": self._fallback_report_markdown(plan, findings)},
                 ensure_ascii=False,
             ),
+            stream_target="initialDraft",
+            stream_field="markdown",
         )
         parsed = _extract_json_object(call.content) or {}
         markdown = str(parsed.get("markdown") or "").strip() or self._markdown_from_model_text(call.content, findings)
@@ -330,6 +332,7 @@ class ModelWorkbenchRunner:
             bullets=_headings(markdown),
             highlights=[{"label": "报告版本 Report version", "items": ["第一版初稿 Initial Draft"]}],
         )
+        self._complete_markdown_stream("initialDraft", markdown, call)
         return markdown
 
     def _run_critic(self, report_markdown: str, findings: list[dict]) -> dict:
@@ -390,7 +393,8 @@ class ModelWorkbenchRunner:
                     role="user",
                     content=(
                         f"这是第 {round_index} 轮 Red Review。请扮演严格审查者，找出报告仍然存在的问题。"
-                        "只返回 JSON，字段为 passed, summary, issues。issues 数组元素包含 "
+                        "只返回 JSON，字段为 passed, summary, reviewText, issues。reviewText 必须用中文逐条写出"
+                        "问题、依据和建议，供用户阅读。issues 数组元素包含 "
                         "issueId, severity, message, evidence, suggestion。issues 最多 3 条。\n\n"
                         "每条 evidence 必须指出报告中的具体句子、章节或缺失项；每条 suggestion 必须说明要改哪一段、"
                         "应补充或删除什么。不要输出泛化的“加强论证”“补充细节”一类建议。\n\n"
@@ -404,6 +408,9 @@ class ModelWorkbenchRunner:
                 ensure_ascii=False,
             ),
             temperature=0.25,
+            stream_target="reviewTranscript",
+            stream_field="reviewText",
+            stream_prefix=f"第 {round_index} 轮 Red Review\n\n",
         )
         parsed = _extract_json_object(call.content) or {}
         issues = _dict_list(parsed.get("issues"))
@@ -412,6 +419,7 @@ class ModelWorkbenchRunner:
             "summary": str(parsed.get("summary") or f"第 {round_index} 轮审查完成。"),
             "issues": issues,
             "round": round_index,
+            "reviewText": str(parsed.get("reviewText") or ""),
         }
         self._finish_step(
             task,
@@ -432,6 +440,7 @@ class ModelWorkbenchRunner:
                 }
             ],
         )
+        self._complete_text_stream("reviewTranscript", self._red_review_text(review, round_index), call)
         return review
 
     def _run_blue(
@@ -450,7 +459,8 @@ class ModelWorkbenchRunner:
                     role="user",
                     content=(
                         f"这是第 {round_index} 轮 Blue Revision。请根据 Red Review 修改报告。只返回 JSON，字段为 "
-                        "revisedReportMarkdown, fixedIssueIds, remainingIssueIds, revisionNotes, changes。"
+                        "revisedReportMarkdown, fixedIssueIds, remainingIssueIds, revisionNotes, revisionText, changes。"
+                        "revisionText 必须用中文逐条说明每个问题的具体修改和原因，供用户阅读。"
                         "changes 是数组，每项必须包含 issueId、change、reason；具体说明修改了报告的哪一段、改成了什么，"
                         "不能只返回 issue ID。"
                         "最终报告必须是中文 Markdown，保留 # Research Report: 和 References 标题，"
@@ -465,6 +475,9 @@ class ModelWorkbenchRunner:
                 ensure_ascii=False,
             ),
             temperature=0.2,
+            stream_target="reviewTranscript",
+            stream_field="revisionText",
+            stream_prefix=f"第 {round_index} 轮 Blue Revision\n\n",
         )
         parsed = _extract_json_object(call.content) or {}
         revised = str(parsed.get("revisedReportMarkdown") or "").strip()
@@ -474,6 +487,7 @@ class ModelWorkbenchRunner:
         fixed = _string_list(parsed.get("fixedIssueIds"))
         remaining = _string_list(parsed.get("remainingIssueIds"))
         notes = _string_list(parsed.get("revisionNotes")) or [f"第 {round_index} 轮模型修订完成。"]
+        revision_text = str(parsed.get("revisionText") or "")
         changes = _dict_list(parsed.get("changes"))
         if not changes:
             issues_by_id = {
@@ -519,12 +533,15 @@ class ModelWorkbenchRunner:
                 },
             ],
         )
-        return revised, {
+        blue_revision = {
             "fixedIssueIds": fixed,
             "remainingIssueIds": remaining,
             "revisionNotes": notes,
+            "revisionText": revision_text,
             "changes": changes,
         }
+        self._complete_text_stream("reviewTranscript", self._blue_revision_text(blue_revision, round_index), call)
+        return revised, blue_revision
 
     def _call_model(
         self,
@@ -532,10 +549,50 @@ class ModelWorkbenchRunner:
         messages: list[LLMMessage],
         fallback_factory: Callable[[], str],
         temperature: float = 0.2,
+        stream_target: str | None = None,
+        stream_field: str | None = None,
+        stream_prefix: str = "",
     ) -> StepCall:
         self._mark_step_running(task)
         started = time.perf_counter()
         try:
+            if stream_target and stream_field and getattr(self.llm_client, "supports_streaming", False):
+                streamed_chunks: list[str] = []
+                visible_streamed = False
+                stream_started = False
+                extractor = _IncrementalJSONTextField(stream_field)
+                try:
+                    for chunk in self.llm_client.generate_stream(messages, temperature=temperature):
+                        streamed_chunks.append(chunk)
+                        if not stream_started:
+                            self._emit("report_stream_start", {"target": stream_target})
+                            if stream_prefix:
+                                self._emit("report_delta", {"target": stream_target, "delta": stream_prefix})
+                            stream_started = True
+                        visible = extractor.feed(chunk)
+                        if visible:
+                            self._emit("report_delta", {"target": stream_target, "delta": visible})
+                            visible_streamed = True
+                    self.model_call_count += 1
+                    return StepCall(
+                        content="".join(streamed_chunks).strip(),
+                        model=getattr(self.llm_client, "config", None) and self.llm_client.config.model,
+                        duration_ms=int((time.perf_counter() - started) * 1000),
+                        native_stream_used=stream_started,
+                        visible_streamed=visible_streamed,
+                    )
+                except Exception as stream_exc:
+                    if stream_started:
+                        self._emit(
+                            "agent_progress",
+                            {
+                                "taskId": task.task_id,
+                                "message": f"{task.agent} 的原生流中断，正在使用完整响应降级。",
+                            },
+                        )
+                    if streamed_chunks:
+                        raise stream_exc
+
             response = self.llm_client.generate(messages, temperature=temperature)
             self.model_call_count += 1
             return StepCall(
@@ -552,6 +609,22 @@ class ModelWorkbenchRunner:
                 error=str(exc),
                 duration_ms=int((time.perf_counter() - started) * 1000),
             )
+
+    def _complete_markdown_stream(self, target: str, markdown: str, call: StepCall) -> None:
+        if not call.native_stream_used:
+            self._emit_markdown_stream(target, markdown)
+            return
+        if not call.visible_streamed:
+            self._emit("report_delta", {"target": target, "delta": markdown})
+        self._emit("report_stream_done", {"target": target, "markdown": markdown})
+
+    def _complete_text_stream(self, target: str, text: str, call: StepCall) -> None:
+        if not call.native_stream_used:
+            self._emit_text_stream(target, text)
+            return
+        if not call.visible_streamed:
+            self._emit("report_delta", {"target": target, "delta": text})
+        self._emit("report_stream_done", {"target": target, "text": text})
 
     def _mark_step_running(self, task: WorkbenchTask) -> None:
         step = self.steps[task.task_id]
@@ -922,6 +995,8 @@ class ModelWorkbenchRunner:
 
     @staticmethod
     def _red_review_text(red_review: dict, round_index: int) -> str:
+        if red_review.get("reviewText"):
+            return f"第 {round_index} 轮 Red Review\n\n{red_review['reviewText'].strip()}"
         lines = [f"第 {round_index} 轮 Red Review", "", red_review.get("summary", "")]
         for item in red_review.get("issues", []):
             lines.append(
@@ -934,6 +1009,8 @@ class ModelWorkbenchRunner:
 
     @staticmethod
     def _blue_revision_text(blue_revision: dict, round_index: int) -> str:
+        if blue_revision.get("revisionText"):
+            return f"第 {round_index} 轮 Blue Revision\n\n{blue_revision['revisionText'].strip()}"
         lines = [f"第 {round_index} 轮 Blue Revision", ""]
         for item in blue_revision.get("changes", []):
             lines.extend(
@@ -1075,6 +1152,71 @@ def _chunk_text(text: str, size: int = 160) -> list[str]:
     if current:
         chunks.append("".join(current))
     return chunks or [text]
+
+
+class _IncrementalJSONTextField:
+    """Extract one JSON string property without exposing the JSON envelope to the UI."""
+
+    def __init__(self, field_name: str) -> None:
+        self._field_name = field_name
+        self._source = ""
+        self._cursor: int | None = None
+        self._escaped = False
+        self._completed = False
+
+    def feed(self, chunk: str) -> str:
+        if self._completed or not chunk:
+            return ""
+        self._source += chunk
+        if self._cursor is None:
+            match = re.search(
+                rf'"{re.escape(self._field_name)}"\s*:\s*"',
+                self._source,
+            )
+            if match is None:
+                return ""
+            self._cursor = match.end()
+
+        output: list[str] = []
+        while self._cursor < len(self._source):
+            char = self._source[self._cursor]
+            if self._escaped:
+                if char == "u":
+                    if self._cursor + 5 > len(self._source):
+                        break
+                    escaped_value = self._source[self._cursor + 1 : self._cursor + 5]
+                    try:
+                        output.append(chr(int(escaped_value, 16)))
+                    except ValueError:
+                        output.append("\\u" + escaped_value)
+                    self._cursor += 5
+                else:
+                    output.append(
+                        {
+                            '"': '"',
+                            "\\": "\\",
+                            "/": "/",
+                            "b": "\b",
+                            "f": "\f",
+                            "n": "\n",
+                            "r": "\r",
+                            "t": "\t",
+                        }.get(char, char)
+                    )
+                    self._cursor += 1
+                self._escaped = False
+                continue
+            if char == "\\":
+                self._escaped = True
+                self._cursor += 1
+                continue
+            if char == '"':
+                self._completed = True
+                self._cursor += 1
+                break
+            output.append(char)
+            self._cursor += 1
+        return "".join(output)
 
 
 def _revision_change_summary(before: str, after: str, limit: int = 420) -> str:

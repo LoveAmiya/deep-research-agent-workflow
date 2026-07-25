@@ -27,16 +27,25 @@ class ScriptedChineseLLMClient:
             '{"findings":[{"claim":"Agentic research tools 需要同时评估结果质量和过程可追踪性。","evidence":"评估需要覆盖任务成功率、证据质量和过程可追踪性。","sourceTitle":"Agent 评估资料","sourceUrl":"https://example.com/agent-eval","confidence":0.85}]}',
             '{"markdown":"# Research Report: 如何评估 Agentic Research Tools\\n\\n## 摘要\\n\\n这是一份中文初稿。\\n\\n## Key Findings（关键发现）\\n\\n- 需要同时评估结果质量和过程可追踪性。[C1]\\n\\n## 深入分析\\n\\nAgent（智能体）不仅要回答正确，还要展示计划、证据和修改过程。\\n\\n## 行动建议\\n\\n- 建立人工样例集。\\n\\n## References（参考来源）\\n\\n- [C1] Agent 评估资料 https://example.com/agent-eval"}',
             '{"passed":false,"summary":"初稿可用，但建议补充评估指标。","checks":{"has_title":true,"has_references":true},"issues":["行动建议还可以更具体。"]}',
-            '{"passed":false,"summary":"发现 1 个可修订问题。","issues":[{"issueId":"R1-1","severity":"medium","message":"行动建议缺少可执行指标。","evidence":"只说建立样例集。","suggestion":"补充 success rate、citation accuracy 和 trace coverage。"}]}',
-            '{"revisedReportMarkdown":"# Research Report: 如何评估 Agentic Research Tools\\n\\n## 摘要\\n\\n这是一份中文最终版报告，覆盖结果质量、证据质量和过程可追踪性。\\n\\n## Key Findings（关键发现）\\n\\n- 需要同时评估结果质量和过程可追踪性。[C1]\\n\\n## 深入分析\\n\\nAgent（智能体）评估不能只看最终答案，还要看 Planner、Reader、Writer、Red/Blue 修改链路是否可解释。\\n\\n## 行动建议\\n\\n- 建立人工样例集。\\n- 记录 success rate（任务成功率）、citation accuracy（引用准确率）和 trace coverage（过程覆盖率）。\\n\\n## References（参考来源）\\n\\n- [C1] Agent 评估资料 https://example.com/agent-eval","fixedIssueIds":["R1-1"],"remainingIssueIds":[],"revisionNotes":["补充了可执行指标。"]}',
-            '{"passed":true,"summary":"Second review passed.","issues":[]}',
-            '{"revisedReportMarkdown":"# Research Report: Agentic Research Tools\\n\\n## Key Findings\\n\\n- Evaluate results and traceability. [C1]\\n\\n## References\\n\\n- [C1] Agent evaluation source https://example.com/agent-eval\\n\\n\\u4e2d\\u6587\\u6700\\u7ec8\\u7248\\u62a5\\u544a","fixedIssueIds":[],"remainingIssueIds":[],"revisionNotes":["Second independent review completed."]}',
+            '{"passed":false,"summary":"发现 1 个可修订问题。","reviewText":"问题：行动建议缺少可执行指标。\\n依据：行动建议仅要求建立样例集。\\n建议：在行动建议章节加入成功率、引用准确率和过程覆盖率。","issues":[{"issueId":"R1-1","severity":"medium","message":"行动建议缺少可执行指标。","evidence":"只说建立样例集。","suggestion":"补充 success rate、citation accuracy 和 trace coverage。"}]}',
+            '{"revisedReportMarkdown":"# Research Report: 如何评估 Agentic Research Tools\\n\\n## 摘要\\n\\n这是一份中文最终版报告，覆盖结果质量、证据质量和过程可追踪性。\\n\\n## Key Findings（关键发现）\\n\\n- 需要同时评估结果质量和过程可追踪性。[C1]\\n\\n## 深入分析\\n\\nAgent（智能体）评估不能只看最终答案，还要看 Planner、Reader、Writer、Red/Blue 修改链路是否可解释。\\n\\n## 行动建议\\n\\n- 建立人工样例集。\\n- 记录 success rate（任务成功率）、citation accuracy（引用准确率）和 trace coverage（过程覆盖率）。\\n\\n## References（参考来源）\\n\\n- [C1] Agent 评估资料 https://example.com/agent-eval","fixedIssueIds":["R1-1"],"remainingIssueIds":[],"revisionNotes":["补充了可执行指标。"],"revisionText":"已在行动建议章节新增 success rate、citation accuracy 与 trace coverage 三项可执行指标，直接回应 R1-1。"}',
+            '{"passed":true,"summary":"Second review passed.","reviewText":"本轮未发现新的阻断问题；引用标记与报告结构保持完整。","issues":[]}',
+            '{"revisedReportMarkdown":"# Research Report: Agentic Research Tools\\n\\n## Key Findings\\n\\n- Evaluate results and traceability. [C1]\\n\\n## References\\n\\n- [C1] Agent evaluation source https://example.com/agent-eval\\n\\n\\u4e2d\\u6587\\u6700\\u7ec8\\u7248\\u62a5\\u544a","fixedIssueIds":[],"remainingIssueIds":[],"revisionNotes":["Second independent review completed."],"revisionText":"第二轮保持结论与引用不变，确认没有新的修订项。"}',
         ]
         return SimpleNamespace(
             content=responses[len(self.calls) - 1],
             model="scripted-chinese-llm",
             usage={"prompt_messages": len(messages), "temperature": temperature},
         )
+
+
+class StreamingScriptedChineseLLMClient(ScriptedChineseLLMClient):
+    supports_streaming = True
+
+    def generate_stream(self, messages, temperature=0.2):
+        response = self.generate(messages, temperature=temperature)
+        for index in range(0, len(response.content), 17):
+            yield response.content[index : index + 17]
 
 
 class TestReportWorkbench(unittest.TestCase):
@@ -164,6 +173,43 @@ class TestReportWorkbench(unittest.TestCase):
         self.assertTrue(first_round["blueRevision"]["changes"])
         self.assertIn("新增：", first_round["blueRevision"]["changes"][0]["change"])
         self.assertIn("sourceUrl", payload["citationValidation"]["sources"][0])
+
+    def test_native_llm_stream_reaches_readable_workbench_fields_before_task_completion(self) -> None:
+        client = StreamingScriptedChineseLLMClient()
+        events = []
+
+        build_report_workbench_payload(
+            "如何评估 Agentic Research Tools？",
+            llm_client=client,
+            red_blue_rounds=2,
+            event_sink=lambda event_type, data: events.append((event_type, data)),
+        )
+
+        writer_done = next(
+            index
+            for index, (event_type, data) in enumerate(events)
+            if event_type == "agent_done" and data["step"]["taskId"] == "writer_task"
+        )
+        initial_delta = next(
+            index
+            for index, (event_type, data) in enumerate(events)
+            if event_type == "report_delta" and data.get("target") == "initialDraft"
+        )
+        review_delta = next(
+            data["delta"]
+            for event_type, data in events
+            if event_type == "report_delta" and data.get("target") == "reviewTranscript"
+        )
+        streamed_deltas = [
+            data["delta"]
+            for event_type, data in events
+            if event_type == "report_delta" and data.get("target") in {"initialDraft", "reviewTranscript"}
+        ]
+
+        self.assertLess(initial_delta, writer_done)
+        self.assertIn("Red Review", review_delta)
+        self.assertTrue(any("行动建议" in delta for delta in streamed_deltas))
+        self.assertFalse(any(delta.lstrip().startswith("{") for delta in streamed_deltas))
 
     def test_default_workbench_completes_at_least_two_review_rounds(self) -> None:
         events = []

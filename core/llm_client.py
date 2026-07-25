@@ -3,7 +3,7 @@ import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, Iterator, List, Optional
 
 from core.config import LLMConfig
 
@@ -27,8 +27,13 @@ class LLMResponse:
 
 
 class BaseLLMClient:
+    supports_streaming = False
+
     def generate(self, messages: List[LLMMessage], temperature: float = 0.2) -> LLMResponse:
         raise NotImplementedError
+
+    def generate_stream(self, messages: List[LLMMessage], temperature: float = 0.2) -> Iterator[str]:
+        raise LLMClientError("This LLM client does not support streaming.")
 
 
 class MockLLMClient(BaseLLMClient):
@@ -73,6 +78,8 @@ class MockLLMClient(BaseLLMClient):
 
 
 class OpenAICompatibleLLMClient(BaseLLMClient):
+    supports_streaming = True
+
     def __init__(self, config: LLMConfig) -> None:
         self.config = config
 
@@ -80,6 +87,36 @@ class OpenAICompatibleLLMClient(BaseLLMClient):
         if self.config.wire_api == "responses":
             return self._generate_responses(messages, temperature=temperature)
         return self._generate_chat_completions(messages, temperature=temperature)
+
+    def generate_stream(self, messages: List[LLMMessage], temperature: float = 0.2) -> Iterator[str]:
+        if self.config.wire_api == "responses":
+            payload = {
+                "model": self.config.model,
+                "input": self._responses_input(messages),
+                "temperature": temperature,
+                "stream": True,
+            }
+            if self.config.max_output_tokens:
+                payload["max_output_tokens"] = self.config.max_output_tokens
+            instructions = self._responses_instructions(messages)
+            if instructions:
+                payload["instructions"] = instructions
+            if self.config.reasoning_effort:
+                payload["reasoning"] = {"effort": self.config.reasoning_effort}
+            if self.config.disable_response_storage:
+                payload["store"] = False
+            yield from self._post_sse(f"{self.config.base_url}/responses", payload)
+            return
+
+        payload = {
+            "model": self.config.model,
+            "messages": [{"role": message.role, "content": message.content} for message in messages],
+            "temperature": temperature,
+            "stream": True,
+        }
+        if self.config.max_output_tokens:
+            payload["max_tokens"] = self.config.max_output_tokens
+        yield from self._post_sse(f"{self.config.base_url}/chat/completions", payload)
 
     def _generate_chat_completions(
         self,
@@ -157,6 +194,63 @@ class OpenAICompatibleLLMClient(BaseLLMClient):
             ) from exc
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
             raise LLMClientError(f"LLM request failed: {exc}") from exc
+
+    def _post_sse(self, url: str, payload: dict) -> Iterator[str]:
+        request = urllib.request.Request(
+            url=url,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self.config.api_key}",
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream",
+                "User-Agent": self.config.user_agent,
+            },
+            method="POST",
+        )
+        data_lines: list[str] = []
+        try:
+            with urllib.request.urlopen(request, timeout=self.config.timeout_seconds) as response:
+                for raw_line in response:
+                    line = raw_line.decode("utf-8", errors="replace").rstrip()
+                    if line.startswith("data:"):
+                        data_lines.append(line[5:].lstrip())
+                        continue
+                    if line:
+                        continue
+                    yield from self._sse_data_deltas(data_lines)
+                    data_lines = []
+                yield from self._sse_data_deltas(data_lines)
+        except urllib.error.HTTPError as exc:
+            response_body = self._read_error_body(exc)
+            raise LLMClientError(
+                f"LLM streaming request failed: HTTP {exc.code} {exc.reason}; response: {response_body}"
+            ) from exc
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+            raise LLMClientError(f"LLM streaming request failed: {exc}") from exc
+
+    @staticmethod
+    def _sse_data_deltas(data_lines: list[str]) -> Iterator[str]:
+        if not data_lines:
+            return
+        payload_text = "\n".join(data_lines).strip()
+        if not payload_text or payload_text == "[DONE]":
+            return
+        try:
+            event = json.loads(payload_text)
+        except json.JSONDecodeError as exc:
+            raise LLMClientError("LLM streaming response contained invalid SSE JSON.") from exc
+
+        if isinstance(event.get("choices"), list) and event["choices"]:
+            delta = event["choices"][0].get("delta", {})
+            content = delta.get("content") if isinstance(delta, dict) else None
+            if isinstance(content, str) and content:
+                yield content
+            return
+
+        if event.get("type") == "response.output_text.delta":
+            delta = event.get("delta")
+            if isinstance(delta, str) and delta:
+                yield delta
 
     @staticmethod
     def _read_error_body(exc: urllib.error.HTTPError) -> str:

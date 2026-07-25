@@ -44,6 +44,20 @@ class FakeHTTPResponse:
         return json.dumps(self.body).encode("utf-8")
 
 
+class FakeStreamingHTTPResponse:
+    def __init__(self, lines: list[bytes]) -> None:
+        self.lines = lines
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        return None
+
+    def __iter__(self):
+        return iter(self.lines)
+
+
 class TestLLMClient(unittest.TestCase):
     def test_mock_llm_client_returns_response(self) -> None:
         client = MockLLMClient()
@@ -134,6 +148,61 @@ class TestLLMClient(unittest.TestCase):
         self.assertEqual(captured["body"]["max_output_tokens"], 1800)
         self.assertEqual(captured["user_agent"], "OpenAI/Python 1.0.0")
         self.assertEqual(response.content, "中文模型响应")
+
+    def test_chat_completions_streams_content_with_existing_config(self) -> None:
+        config = LLMConfig(
+            enabled=True,
+            model="gpt-test",
+            api_key="test-key",
+            base_url="https://example.test/v1",
+        )
+        captured = {}
+        lines = [
+            b'data: {"choices":[{"delta":{"content":"\u4f60\u597d"}}]}\n',
+            b"\n",
+            b'data: {"choices":[{"delta":{"content":"\u4e16\u754c"}}]}\n',
+            b"\n",
+            b"data: [DONE]\n",
+            b"\n",
+        ]
+
+        def fake_urlopen(request, timeout):
+            import json
+
+            captured["url"] = request.full_url
+            captured["timeout"] = timeout
+            captured["body"] = json.loads(request.data.decode("utf-8"))
+            captured["accept"] = request.headers.get("Accept")
+            return FakeStreamingHTTPResponse(lines)
+
+        client = OpenAICompatibleLLMClient(config)
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            chunks = list(client.generate_stream([LLMMessage(role="user", content="hello")]))
+
+        self.assertEqual(chunks, ["你好", "世界"])
+        self.assertEqual(captured["url"], "https://example.test/v1/chat/completions")
+        self.assertTrue(captured["body"]["stream"])
+        self.assertEqual(captured["body"]["model"], "gpt-test")
+        self.assertEqual(captured["accept"], "text/event-stream")
+
+    def test_responses_api_streams_output_text_deltas(self) -> None:
+        config = LLMConfig(
+            enabled=True,
+            model="gpt-test",
+            api_key="test-key",
+            base_url="https://example.test/v1",
+            wire_api="responses",
+        )
+        lines = [
+            b'data: {"type":"response.output_text.delta","delta":"\u4e2d\u6587"}\n',
+            b"\n",
+        ]
+
+        client = OpenAICompatibleLLMClient(config)
+        with patch("urllib.request.urlopen", return_value=FakeStreamingHTTPResponse(lines)):
+            chunks = list(client.generate_stream([LLMMessage(role="user", content="hello")]))
+
+        self.assertEqual(chunks, ["中文"])
 
     def test_http_error_message_includes_sanitized_response_body(self) -> None:
         config = LLMConfig(
