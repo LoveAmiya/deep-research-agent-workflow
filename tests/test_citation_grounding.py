@@ -72,6 +72,10 @@ class TestCitationGrounding(unittest.TestCase):
 
         self.assertTrue(result["passed"])
         self.assertEqual(result["grounded_citation_count"], 1)
+        self.assertEqual(result["sources"][0]["citationId"], "C1")
+        self.assertEqual(result["sources"][0]["evidenceText"], "Evidence text")
+        self.assertEqual(result["sources"][0]["startChar"], 0)
+        self.assertEqual(result["sources"][0]["endChar"], len("Evidence text"))
 
     def test_validator_detects_missing_citation_marker(self) -> None:
         registry = CitationRegistry()

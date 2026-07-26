@@ -38,9 +38,10 @@ class WriterAgent(BaseAgent):
                 metadata={"role": self.role, "handoff": "findings -> report"},
             )
 
-        references = self._unique_references(findings)
+        report_findings = self._unique_findings(findings)[:8]
+        references = self._unique_references(report_findings)
         citation_registry = context.inputs.get("citation_registry")
-        citation_ids = self._citation_ids(findings)
+        citation_ids = self._citation_ids(report_findings)
         metadata = {
             "role": self.role,
             "handoff": "findings -> report",
@@ -64,7 +65,7 @@ class WriterAgent(BaseAgent):
                         LLMMessage(role="system", content=prompt),
                         LLMMessage(
                             role="user",
-                            content=self._build_writer_user_message(question, findings, references),
+                            content=self._build_writer_user_message(question, report_findings, references),
                         ),
                     ]
                 )
@@ -73,7 +74,7 @@ class WriterAgent(BaseAgent):
                 validation_diagnostics = {}
                 accepted = self._normalize_model_markdown(
                     candidate,
-                    findings,
+                    report_findings,
                     citation_registry,
                     validation_diagnostics,
                 )
@@ -90,13 +91,13 @@ class WriterAgent(BaseAgent):
                 metadata["fallback_used"] = True
 
         if markdown is None:
-            sections = self._build_sections(question, findings, use_citation_markers=citation_registry is not None)
+            sections = self._build_sections(question, report_findings, use_citation_markers=citation_registry is not None)
         if markdown is None:
             markdown = self._build_markdown(question, sections, references, citation_registry)
             if context.llm_client is not None:
                 metadata["fallback_used"] = True
         if citation_registry is not None:
-            markdown, added_count = self._ensure_citation_markers(markdown, findings)
+            markdown, added_count = self._ensure_citation_markers(markdown, report_findings)
             metadata["citation_markers_added"] = added_count
             metadata["references_generated_from_registry"] = True
         report = ResearchReport(
@@ -106,7 +107,7 @@ class WriterAgent(BaseAgent):
             citations=references,
             markdown=markdown,
             question_id=question.question_id,
-            findings=findings,
+            findings=report_findings,
             references=references,
             summary=plan.objective,
         )
@@ -124,23 +125,55 @@ class WriterAgent(BaseAgent):
         findings: List[Finding],
         use_citation_markers: bool = False,
     ) -> List[dict]:
+        unique_findings = WriterAgent._unique_findings(findings)[:8]
         background = (
-            f"This mock research report examines the question: {question.question}. "
-            "The current pipeline is deterministic and uses placeholder evidence rather than real web or model calls."
+            f"本报告围绕“{question.question}”展开。分析重点不是单一模型参数，而是把已经获得的"
+            "证据放回企业决策场景，考察业务目标、实施条件、治理责任与持续运营之间的关系。"
         )
         key_findings_lines = [
             f"- {finding.claim}{WriterAgent._citation_suffix(finding, use_citation_markers)}"
-            for finding in findings
+            for finding in unique_findings
         ]
+        if not key_findings_lines:
+            key_findings_lines = ["当前没有足够的可引用证据形成事实性发现。"]
+        analysis_lines = [
+            f"{index}. **{finding.claim}** 该判断直接对应已批准证据，报告不在证据范围之外扩展新的事实断言。"
+            for index, finding in enumerate(unique_findings, start=1)
+        ] or ["现有材料不足以支持展开事实性讨论，应先补齐来源后再比较各影响因素。"]
+        limitations = (
+            f"本次共形成 {len(unique_findings)} 条互不重复的批准发现。"
+            + ("发现数量少于五条，不能据此声称已经完整覆盖该问题。" if len(unique_findings) < 5 else "结论仍受当前来源范围和证据时点限制。")
+        )
+        recommendations = (
+            "优先复核每条发现对应的原文切片与来源；对证据覆盖较弱的维度补充独立材料；"
+            "在形成采购、部署或治理决策前，将结论转换为可测量的验证问题。"
+        )
+        conclusion_claims = "；".join(finding.claim.rstrip("。") for finding in unique_findings[:5])
         conclusion = (
-            f"Based on the mock evidence, {question.question.lower()} is shaped by recurring factors such as "
-            "business value, governance, integration effort, and operational readiness."
+            f"综合现有证据，对“{question.question}”的回答不能被压缩为单一因素。"
+            + (f"当前最明确的结论包括：{conclusion_claims}。" if conclusion_claims else "当前证据不足，尚不能形成可靠结论。")
+            + "这些发现需要结合企业自身约束进行优先级排序，并通过后续验证形成可执行决策。"
         )
         return [
             {"title": "Background", "content": background},
             {"title": "Key Findings", "content": "\n".join(key_findings_lines)},
+            {"title": "Analysis and Discussion", "content": "\n\n".join(analysis_lines)},
+            {"title": "Limitations", "content": limitations},
+            {"title": "Recommendations", "content": recommendations},
             {"title": "Conclusion", "content": conclusion},
         ]
+
+    @staticmethod
+    def _unique_findings(findings: List[Finding]) -> List[Finding]:
+        unique = []
+        seen = set()
+        for finding in findings:
+            normalized = " ".join((finding.claim or "").lower().split())
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            unique.append(finding)
+        return unique
 
     @classmethod
     def _accept_model_markdown(
@@ -156,8 +189,6 @@ class WriterAgent(BaseAgent):
             diagnostics["validation_error"] = "missing_required_sections"
             return None
         allowed = {finding.citation_id for finding in findings if finding.citation_id}
-        if citation_registry is not None:
-            allowed.update(citation.citation_id for citation in citation_registry.list_citations())
         markers = set(re.findall(r"\[(C[^\]]+)\]", markdown))
         if not markers.issubset(allowed):
             diagnostics["validation_error"] = "unknown_citation_marker"
@@ -194,8 +225,6 @@ class WriterAgent(BaseAgent):
                 diagnostics["validation_error"] = "unrecognized_report_structure"
             return None
         allowed = {finding.citation_id for finding in findings if finding.citation_id}
-        if citation_registry is not None:
-            allowed.update(citation.citation_id for citation in citation_registry.list_citations())
         markers = set(re.findall(r"\[(C[^\]]+)\]", markdown))
         if not markers.issubset(allowed):
             if diagnostics is not None:
@@ -225,7 +254,7 @@ class WriterAgent(BaseAgent):
                 diagnostics["validation_error"] = "no_rebuildable_key_findings"
             return None
         normalized = markdown[:key_start] + "## Key Findings\n\n" + "\n".join(rebuilt_bullets) + markdown[key_end:]
-        references = citation_registry.to_references_markdown() if citation_registry is not None else ""
+        references = citation_registry.to_references_markdown(sorted(allowed)) if citation_registry is not None else ""
         if not references:
             references = "\n".join(
                 f"[{finding.citation_id}] {finding.source_url}"
@@ -339,7 +368,7 @@ class WriterAgent(BaseAgent):
             lines.extend([f"## {section['title']}", "", section["content"], ""])
         lines.extend(["## References", ""])
         if citation_registry is not None:
-            references_markdown = citation_registry.to_references_markdown()
+            references_markdown = citation_registry.to_references_markdown(references)
             if references_markdown:
                 lines.extend(references_markdown.splitlines())
         else:

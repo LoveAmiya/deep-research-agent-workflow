@@ -13,6 +13,10 @@ from report_workbench import (
     ReportWorkbenchHandler,
     build_report_workbench_payload,
 )
+from agents.base_agent import AgentContext
+from agents.writer_agent import WriterAgent
+from core.schema import Finding, ResearchPlan, ResearchQuestion
+from tools.citation_tool import CitationRegistry
 
 
 class ScriptedChineseLLMClient:
@@ -49,6 +53,68 @@ class StreamingScriptedChineseLLMClient(ScriptedChineseLLMClient):
 
 
 class TestReportWorkbench(unittest.TestCase):
+    def test_public_workbench_never_presents_mock_sources_as_verified_references(self) -> None:
+        payload = build_report_workbench_payload("What affects enterprise LLM adoption?")
+
+        self.assertNotIn("mock://", payload["finalReportMarkdown"])
+        self.assertFalse(payload["citationValidation"]["passed"])
+        self.assertTrue(any("模拟" in reason for reason in payload["degradationReasons"]))
+
+    def test_fallback_writer_builds_a_complete_research_structure(self) -> None:
+        registry = CitationRegistry()
+        findings = []
+        dimensions = ["成本", "治理", "集成", "模型能力", "人才", "安全"]
+        for index, dimension in enumerate(dimensions, start=1):
+            evidence = registry.add_evidence(
+                f"https://example.com/{index}",
+                f"{dimension}会影响企业采用决策。",
+                source_title=f"来源 {index}",
+            )
+            citation = registry.add_citation(
+                f"https://example.com/{index}",
+                evidence_id=evidence.evidence_id,
+                source_title=f"来源 {index}",
+            )
+            findings.append(Finding(
+                claim=f"{dimension}是企业评估开源大语言模型时需要单独衡量的因素。",
+                evidence=evidence.text,
+                source_url=evidence.source_url,
+                source_title=evidence.source_title,
+                evidence_id=evidence.evidence_id,
+                citation_id=citation.citation_id,
+            ))
+
+        result = WriterAgent().run(AgentContext(
+            task_id="writer_task",
+            inputs={
+                "question": ResearchQuestion(question="企业为什么采用开源大语言模型？"),
+                "plan": ResearchPlan(question="企业为什么采用开源大语言模型？"),
+                "findings": findings,
+                "citation_registry": registry,
+            },
+        ))
+
+        markdown = result.output.markdown
+        for heading in ["Background", "Key Findings", "Analysis and Discussion", "Limitations", "Recommendations", "Conclusion", "References"]:
+            self.assertIn(f"## {heading}", markdown)
+        self.assertGreaterEqual(markdown.count("- "), 6)
+        self.assertNotIn("mock evidence", markdown.lower())
+
+    def test_handoffs_explain_artifact_action_and_content_in_chinese(self) -> None:
+        payload = build_report_workbench_payload("What affects enterprise LLM adoption?")
+
+        first = payload["handoffs"][0]
+        self.assertEqual(first["actionLabel"], "接收并用于下一步")
+        self.assertIn("研究任务书", first["artifactLabel"])
+        self.assertTrue(first["contentSummary"])
+        self.assertNotIn("research_brief", first["displayText"])
+
+    def test_browser_defers_final_payload_until_stream_queues_are_drained(self) -> None:
+        self.assertIn("enqueueStreamDelta(data.target", INDEX_HTML)
+        self.assertIn("pendingCompletedPayload", INDEX_HTML)
+        self.assertIn("flushCompletedPayloadWhenReady", INDEX_HTML)
+        self.assertNotIn('if (event === "run_completed") {\n        renderPayload(data.payload);', INDEX_HTML)
+
     def test_user_workbench_does_not_render_raw_agent_or_validation_json(self) -> None:
         self.assertNotIn("JSON.stringify(payload.citationValidation", INDEX_HTML)
         self.assertNotIn("step.outputPreview", INDEX_HTML)

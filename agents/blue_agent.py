@@ -40,7 +40,8 @@ class BlueAgent(BaseAgent):
             )
 
         citation_registry = context.inputs.get("citation_registry")
-        revised_report = self._revise_report(report, findings, citation_registry)
+        approved_findings = list(report.findings or self._unique_findings(findings)[:8])
+        revised_report = self._revise_report(report, approved_findings, citation_registry)
         fixed_issue_ids = []
         remaining_issue_ids = []
         revision_notes = []
@@ -63,7 +64,7 @@ class BlueAgent(BaseAgent):
                         LLMMessage(role="system", content=load_prompt("blue_agent")),
                         LLMMessage(
                             role="user",
-                            content=self._build_revision_request(revised_report, red_review, findings),
+                            content=self._build_revision_request(revised_report, red_review, approved_findings),
                         ),
                     ]
                 )
@@ -77,7 +78,7 @@ class BlueAgent(BaseAgent):
                     revised_report = self._accept_model_revision(
                         candidate,
                         revised_report,
-                        findings,
+                        approved_findings,
                         citation_registry,
                     )
                 model_fixed = string_list(parsed.get("fixed_issue_ids") or parsed.get("fixedIssueIds"))
@@ -146,10 +147,6 @@ class BlueAgent(BaseAgent):
         allowed_citations = {
             finding.citation_id for finding in findings if finding.citation_id
         }
-        if citation_registry is not None:
-            allowed_citations.update(
-                citation.citation_id for citation in citation_registry.list_citations()
-            )
         sanitized_lines = [
             line for line in markdown.splitlines()
             if not any(marker not in allowed_citations for marker in re.findall(r"\[([^\]]+)\]", line) if marker.startswith("C"))
@@ -176,7 +173,7 @@ class BlueAgent(BaseAgent):
     def _restore_registry_references(report: ResearchReport, citation_registry=None) -> ResearchReport:
         if citation_registry is None:
             return report
-        references = citation_registry.to_references_markdown()
+        references = citation_registry.to_references_markdown(report.citations)
         if not references:
             return report
         marker = "## References"
@@ -209,10 +206,11 @@ class BlueAgent(BaseAgent):
         findings: List[Finding],
         citation_registry=None,
     ) -> ResearchReport:
+        approved_findings = self._unique_findings(findings)[:8]
         sections = list(report.sections)
         section_titles = [section["title"] for section in sections]
         citations = (
-            self._collect_citation_ids(findings)
+            self._collect_citation_ids(approved_findings)
             if citation_registry is not None
             else list(report.citations) if report.citations else self._collect_citations(findings)
         )
@@ -234,7 +232,7 @@ class BlueAgent(BaseAgent):
                     "title": "Key Findings",
                     "content": "\n".join(
                         f"- {finding.claim}{self._citation_suffix(finding, citation_registry is not None)}"
-                        for finding in findings
+                        for finding in approved_findings
                     ),
                 }
             )
@@ -261,7 +259,7 @@ class BlueAgent(BaseAgent):
             sections = self._replace_references_if_registry_available(sections, citations, citation_registry)
 
         markdown = self._build_markdown(report, sections, citations, citation_registry)
-        markdown = self._ensure_key_finding_markers(markdown, findings)
+        markdown = self._ensure_key_finding_markers(markdown, approved_findings)
         return replace(
             report,
             sections=sections,
@@ -288,6 +286,18 @@ class BlueAgent(BaseAgent):
         return citations
 
     @staticmethod
+    def _unique_findings(findings: List[Finding]) -> List[Finding]:
+        unique = []
+        seen = set()
+        for finding in findings:
+            normalized = " ".join((finding.claim or "").lower().split())
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            unique.append(finding)
+        return unique
+
+    @staticmethod
     def _citation_suffix(finding: Finding, use_citation_markers: bool) -> str:
         if use_citation_markers and finding.citation_id:
             return f" [{finding.citation_id}]"
@@ -296,7 +306,7 @@ class BlueAgent(BaseAgent):
     @staticmethod
     def _references_content(citations: List[str], citation_registry=None) -> str:
         if citation_registry is not None:
-            references = citation_registry.to_references_markdown()
+            references = citation_registry.to_references_markdown(citations)
             if references:
                 return references
         return "\n".join(f"- {citation}" for citation in citations)

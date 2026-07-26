@@ -76,9 +76,12 @@ class CitationRegistry:
     def list_citations(self) -> List[Citation]:
         return list(self._citations.values())
 
-    def to_references_markdown(self) -> str:
+    def to_references_markdown(self, citation_ids: Optional[List[str]] = None) -> str:
         lines = []
+        allowed = set(citation_ids) if citation_ids is not None else None
         for citation in self.list_citations():
+            if allowed is not None and citation.citation_id not in allowed:
+                continue
             title = citation.source_title or "Untitled source"
             lines.append(f"[{citation.citation_id}] {title} - {citation.source_url}")
         return "\n".join(lines)
@@ -117,13 +120,35 @@ class CitationValidator:
         if missing_reference_urls:
             issues.append("References section is missing citation URLs.")
 
-        grounded_count = sum(1 for citation_id in citation_ids if registry.get_citation(citation_id) is not None)
+        sources = []
+        for citation_id in citation_ids:
+            citation = registry.get_citation(citation_id)
+            if citation is None:
+                continue
+            evidence = registry.get_evidence(citation.evidence_id) if citation.evidence_id else None
+            sources.append(
+                {
+                    "citationId": citation.citation_id,
+                    "evidenceId": citation.evidence_id,
+                    "sourceTitle": citation.source_title or getattr(evidence, "source_title", None),
+                    "sourceUrl": citation.source_url,
+                    "evidenceText": getattr(evidence, "text", "") or citation.quote or "",
+                    "quote": citation.quote or "",
+                    "startChar": getattr(evidence, "start_char", None),
+                    "endChar": getattr(evidence, "end_char", None),
+                    "status": "linked" if evidence is not None else "missing_evidence",
+                    "isMock": citation.source_url.startswith("mock://"),
+                }
+            )
+
+        grounded_count = len(sources)
         return {
             "passed": len(issues) == 0,
             "issues": issues,
             "citation_count": len(citation_ids),
             "grounded_citation_count": grounded_count,
             "missing_citations": missing_citations,
+            "sources": sources,
         }
 
     @staticmethod

@@ -6,6 +6,7 @@ from dataclasses import asdict, is_dataclass
 from difflib import unified_diff
 import json
 import os
+import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
@@ -100,9 +101,25 @@ def summarize_pipeline_result(result: dict) -> dict:
     outputs = execution.outputs
     initial_report = result.get("initial_report")
     final_report = result.get("final_report") or result.get("report")
-    initial_markdown = _report_markdown(initial_report)
-    final_markdown = _report_markdown(final_report)
+    raw_initial_markdown = _report_markdown(initial_report)
+    raw_final_markdown = _report_markdown(final_report)
+    public_projection = _build_public_projection(
+        raw_initial_markdown,
+        raw_final_markdown,
+        result.get("findings", []),
+        result.get("citation_validation", {}),
+    )
+    initial_markdown = public_projection["initialMarkdown"]
+    final_markdown = public_projection["finalMarkdown"]
     diff_summary = _build_report_diff_summary(initial_markdown, final_markdown)
+    report_metrics = _report_metrics(final_report, initial_report, result)
+    report_metrics["Citations"] = int(public_projection["citationValidation"].get("citation_count", 0) or 0)
+    report_metrics["Findings"] = len(
+        [finding for finding in public_projection["findings"] if finding.get("citationStatus") == "已关联证据"]
+    )
+    report_metrics["Citation validation"] = (
+        "passed" if public_projection["citationValidation"].get("passed") else "needs review"
+    )
 
     step_impacts = [
         _summarize_step(task_id, agent_name, title, outputs, result, diff_summary)
@@ -137,7 +154,7 @@ def summarize_pipeline_result(result: dict) -> dict:
         "finalReportMarkdown": final_markdown,
         "initialReportMarkdown": initial_markdown,
         "reportDiffSummary": diff_summary,
-        "reportMetrics": _report_metrics(final_report, initial_report, result),
+        "reportMetrics": report_metrics,
         "modelRun": {
             "mode": "collaborative_dag_llm" if llm_count else "collaborative_dag_deterministic",
             "fallbackCount": fallback_count,
@@ -145,13 +162,90 @@ def summarize_pipeline_result(result: dict) -> dict:
         },
         "degradationReasons": degradation_reasons,
         "stepImpacts": step_impacts,
-        "findings": [_summarize_finding(finding) for finding in result.get("findings", [])],
-        "citationValidation": _to_jsonable(result.get("citation_validation", {})),
+        "findings": public_projection["findings"],
+        "citationValidation": public_projection["citationValidation"],
         "memoryTimeline": [_summarize_memory_item(item) for item in result.get("memory_items", [])],
         "ledgerSummary": _to_jsonable(result.get("ledger_summary", {})),
-        "handoffs": [_summarize_handoff(handoff) for handoff in result.get("handoffs", [])],
+        "handoffs": [
+            _summarize_handoff(handoff, result.get("ledger"))
+            for handoff in result.get("handoffs", [])
+        ],
         "reviewRounds": _summarize_review_rounds(result),
     }
+
+
+def _build_public_projection(
+    initial_markdown: str,
+    final_markdown: str,
+    findings: list,
+    citation_validation: dict,
+) -> dict:
+    validation = _to_jsonable(citation_validation or {})
+    sources = list(validation.get("sources", []) or [])
+    mock_sources = [source for source in sources if source.get("isMock") or str(source.get("sourceUrl", "")).startswith("mock://")]
+    public_sources = [source for source in sources if source not in mock_sources]
+    mock_citation_ids = {source.get("citationId") for source in mock_sources if source.get("citationId")}
+
+    public_findings = []
+    for finding in findings:
+        item = _summarize_finding(finding)
+        is_mock = str(item.get("sourceUrl", "")).startswith("mock://")
+        if is_mock:
+            item.update(
+                {
+                    "citationId": None,
+                    "evidenceId": None,
+                    "sourceUrl": "",
+                    "sourceTitle": "未验证的本地分析线索",
+                    "evidence": "该线索没有可核验的公开原文，因此不会进入正式引用或引用校验。",
+                    "citationStatus": "不可引用",
+                }
+            )
+        else:
+            item["citationStatus"] = "已关联证据" if item.get("citationId") else "待补证"
+        public_findings.append(item)
+
+    if mock_sources:
+        validation["passed"] = False
+        validation["sources"] = public_sources
+        validation["citation_count"] = len(public_sources)
+        validation["grounded_citation_count"] = len(
+            [source for source in public_sources if source.get("status") == "linked"]
+        )
+        issues = list(validation.get("issues", []) or [])
+        issues.append("检测到模拟来源；它们已从公开报告、正式引用和校验结果中移除。")
+        validation["issues"] = list(dict.fromkeys(issues))
+        initial_markdown = _remove_unverified_references(initial_markdown, mock_citation_ids, public_sources)
+        final_markdown = _remove_unverified_references(final_markdown, mock_citation_ids, public_sources)
+    else:
+        validation["sources"] = public_sources
+
+    return {
+        "initialMarkdown": initial_markdown,
+        "finalMarkdown": final_markdown,
+        "findings": public_findings,
+        "citationValidation": validation,
+    }
+
+
+def _remove_unverified_references(markdown: str, citation_ids: set[str], public_sources: list[dict]) -> str:
+    sanitized = str(markdown or "")
+    for citation_id in citation_ids:
+        sanitized = re.sub(rf"\s*\[{re.escape(citation_id)}\]", "", sanitized)
+    sanitized = re.sub(r"(?i)\bmock\s+evidence\b", "现有分析线索", sanitized)
+    sanitized = re.sub(r"(?i)\bmock\s+research\s+report\b", "研究报告", sanitized)
+    sanitized = re.sub(r"(?i)\bplaceholder\s+evidence\b", "有限材料", sanitized)
+
+    references_match = re.search(r"(?m)^##\s+(References|参考来源|参考文献).*?$", sanitized)
+    if references_match:
+        sanitized = sanitized[: references_match.start()].rstrip()
+    reference_lines = [
+        f"[{source.get('citationId')}] {source.get('sourceTitle') or '未命名来源'} - {source.get('sourceUrl')}"
+        for source in public_sources
+        if source.get("citationId") and source.get("sourceUrl")
+    ]
+    reference_body = "\n".join(reference_lines) if reference_lines else "暂无可核验的公开参考来源。"
+    return f"{sanitized}\n\n## References\n\n{reference_body}".strip()
 
 
 def _emit_report_stream(event_sink, target: str, text: str) -> None:
@@ -161,14 +255,68 @@ def _emit_report_stream(event_sink, target: str, text: str) -> None:
     event_sink("report_stream_done", {"target": target, "markdown": text})
 
 
-def _summarize_handoff(handoff: Any) -> dict:
+ARTIFACT_LABELS = {
+    "research_brief": "研究任务书（问题拆解、子问题与检索方向）",
+    "candidate_sources": "候选资料清单（标题、链接与来源摘要）",
+    "approved_findings": "批准发现（可供报告使用的结论与证据）",
+    "initial_report": "初始报告（Writer 完成的第一版正文）",
+    "critic_review": "质量检查单（结构、论证与引用问题）",
+    "red_review": "Red 审查单（具体问题、依据与修订建议）",
+    "blue_revision": "Blue 修订稿（问题处理结果与新版报告）",
+    "red_review_round": "本轮 Red 审查单",
+    "blue_revision_round": "本轮 Blue 修订稿",
+}
+
+ACTION_LABELS = {
+    "consume": "接收并用于下一步",
+    "request_revision": "退回并请求修订",
+    "revalidate": "修订后交回复核",
+}
+
+STATUS_LABELS = {
+    "ACKNOWLEDGED": "已接收",
+    "REVISION_REQUESTED": "已退回修订",
+    "PUBLISHED": "已发布",
+}
+
+
+def _summarize_handoff(handoff: Any, ledger=None) -> dict:
     data = _to_jsonable(handoff)
+    artifact_ids = list(data.get("artifact_ids", data.get("artifactIds", [])) or [])
+    artifacts = []
+    if ledger is not None:
+        for artifact_id in artifact_ids:
+            try:
+                artifact = ledger.read(artifact_id)
+            except (KeyError, AttributeError):
+                continue
+            artifacts.append(artifact)
+    artifact_types = [getattr(artifact, "artifact_type", "") for artifact in artifacts]
+    artifact_label = "、".join(
+        ARTIFACT_LABELS.get(artifact_type, artifact_type)
+        for artifact_type in artifact_types
+        if artifact_type
+    ) or "协作工件"
+    content_summary = "；".join(
+        getattr(artifact, "summary", "") for artifact in artifacts if getattr(artifact, "summary", "")
+    ) or str(data.get("reason", ""))
+    action = data.get("action", "")
+    status = data.get("status", "")
+    sender = data.get("sender_agent", data.get("senderAgent", ""))
+    recipient = data.get("recipient_agent", data.get("recipientAgent", ""))
     return {
-        "senderAgent": data.get("sender_agent", data.get("senderAgent", "")),
-        "recipientAgent": data.get("recipient_agent", data.get("recipientAgent", "")),
-        "status": data.get("status", ""),
-        "action": data.get("action", ""),
+        "senderAgent": sender,
+        "recipientAgent": recipient,
+        "status": status,
+        "statusLabel": STATUS_LABELS.get(status, status or "已交接"),
+        "action": action,
+        "actionLabel": ACTION_LABELS.get(action, action or "接收并用于下一步"),
         "reason": data.get("reason", ""),
+        "artifactIds": artifact_ids,
+        "artifactTypes": artifact_types,
+        "artifactLabel": artifact_label,
+        "contentSummary": content_summary,
+        "displayText": f"{sender} 将“{artifact_label}”交给 {recipient}，用于{ACTION_LABELS.get(action, '下一步处理')}。",
     }
 
 
