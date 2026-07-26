@@ -81,6 +81,11 @@ class BlueAgent(BaseAgent):
                         approved_findings,
                         citation_registry,
                     )
+                    revised_report = self._revise_report(
+                        revised_report,
+                        approved_findings,
+                        citation_registry,
+                    )
                 model_fixed = string_list(parsed.get("fixed_issue_ids") or parsed.get("fixedIssueIds"))
                 model_remaining = string_list(parsed.get("remaining_issue_ids") or parsed.get("remainingIssueIds"))
                 allowed_issue_ids = {issue.issue_id for issue in red_review.issues}
@@ -162,9 +167,19 @@ class BlueAgent(BaseAgent):
                 continue
             if not any(marker in line for marker in approved_markers):
                 return fallback_report
+        section_order = [
+            "Background",
+            "Key Findings",
+            "Analysis and Discussion",
+            "Limitations",
+            "Recommendations",
+            "Conclusion",
+            "References",
+        ]
         sections = [
             {"title": section, "content": cls._extract_section(sanitized, section).strip()}
-            for section in ["Background", "Key Findings", "Conclusion", "References"]
+            for section in section_order
+            if f"## {section}" in sanitized
         ]
         revised = replace(fallback_report, sections=sections, markdown=sanitized)
         return cls._restore_registry_references(revised, citation_registry)
@@ -247,6 +262,38 @@ class BlueAgent(BaseAgent):
             )
             revision_notes.append("Added missing Conclusion section.")
 
+        if "Analysis and Discussion" not in section_titles:
+            analysis = "\n\n".join(
+                f"{index}. {finding.claim} 该结论只在已批准证据范围内解释，不扩展新的事实。"
+                for index, finding in enumerate(approved_findings, start=1)
+            ) or "现有证据不足，暂时无法展开可靠的事实性讨论。"
+            self._insert_section_before(
+                sections,
+                {"title": "Analysis and Discussion", "content": analysis},
+                "Conclusion",
+            )
+
+        if "Limitations" not in section_titles:
+            limitation = (
+                f"当前报告使用 {len(approved_findings)} 条互不重复的批准发现；"
+                "未被证据覆盖的方面不应被解释为已经验证。"
+            )
+            self._insert_section_before(
+                sections,
+                {"title": "Limitations", "content": limitation},
+                "Conclusion",
+            )
+
+        if "Recommendations" not in section_titles:
+            self._insert_section_before(
+                sections,
+                {
+                    "title": "Recommendations",
+                    "content": "逐条复核引用证据，优先补充覆盖不足的主题，并把结论转换为可验证的决策问题。",
+                },
+                "Conclusion",
+            )
+
         if "References" not in section_titles:
             sections.append(
                 {
@@ -268,6 +315,14 @@ class BlueAgent(BaseAgent):
             markdown=markdown,
             summary=report.summary or "Revised report after BlueAgent pass.",
         )
+
+    @staticmethod
+    def _insert_section_before(sections: List[dict], section: dict, before_title: str) -> None:
+        index = next(
+            (position for position, item in enumerate(sections) if item.get("title") == before_title),
+            len(sections),
+        )
+        sections.insert(index, section)
 
     @staticmethod
     def _collect_citations(findings: List[Finding]) -> List[str]:

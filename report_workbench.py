@@ -250,8 +250,8 @@ def _remove_unverified_references(markdown: str, citation_ids: set[str], public_
 
 def _emit_report_stream(event_sink, target: str, text: str) -> None:
     event_sink("report_stream_start", {"target": target})
-    for index in range(0, len(text), 240):
-        event_sink("report_delta", {"target": target, "delta": text[index : index + 240]})
+    for index in range(0, len(text), 80):
+        event_sink("report_delta", {"target": target, "delta": text[index : index + 80]})
     event_sink("report_stream_done", {"target": target, "markdown": text})
 
 
@@ -321,48 +321,126 @@ def _summarize_handoff(handoff: Any, ledger=None) -> dict:
 
 
 def _summarize_review_rounds(result: dict) -> list[dict]:
-    rounds = [_review_round(1, result.get("red_review"), result.get("blue_revision"))]
+    current_report = result.get("initial_report")
+    first_blue = result.get("blue_revision")
+    rounds = [_review_round(1, result.get("red_review"), first_blue, current_report)]
+    if first_blue is not None:
+        current_report = getattr(first_blue, "revised_report", current_report)
     loop_result = result.get("red_blue_loop_result")
     for loop_round in getattr(loop_result, "rounds", []) or []:
         rounds.append(_review_round(
             loop_round.round_index + 1,
             loop_round.red_review,
             loop_round.blue_revision,
+            current_report,
         ))
+        if loop_round.blue_revision is not None:
+            current_report = loop_round.blue_revision.revised_report
     return rounds
 
 
-def _review_round(round_index: int, red_review: Any, blue_revision: Any) -> dict:
+def _review_round(round_index: int, red_review: Any, blue_revision: Any, before_report: Any = None) -> dict:
     issues = []
     for issue in getattr(red_review, "issues", []) or []:
         issues.append(
             {
                 "issueId": getattr(issue, "issue_id", ""),
                 "severity": getattr(issue, "severity", ""),
-                "message": getattr(issue, "message", ""),
-                "evidence": getattr(issue, "evidence", ""),
-                "suggestion": getattr(issue, "suggestion", ""),
+                "message": _localize_review_text(getattr(issue, "message", "")),
+                "evidence": _localize_review_text(getattr(issue, "evidence", "")),
+                "suggestion": _localize_review_text(getattr(issue, "suggestion", "")),
             }
         )
     changes = [
         {"issueId": issue_id, "change": note, "reason": "回应 Red 审查意见。"}
         for issue_id, note in zip(
             getattr(blue_revision, "fixed_issue_ids", []) or [],
-            getattr(blue_revision, "revision_notes", []) or [],
+            [_localize_review_text(note) for note in getattr(blue_revision, "revision_notes", []) or []],
         )
     ]
+    before_markdown = _report_markdown(before_report)
+    after_markdown = _report_markdown(getattr(blue_revision, "revised_report", None)) or before_markdown
+    content_diff = _build_report_diff_summary(before_markdown, after_markdown)
+    before_excerpt = "\n".join(content_diff["removedLines"][:4]).strip()
+    after_excerpt = "\n".join(content_diff["addedLines"][:4]).strip()
+    if before_excerpt or after_excerpt:
+        changes.append(
+            {
+                "issueId": "正文差异",
+                "change": f"本轮新增 {content_diff['addedLineCount']} 行、删除 {content_diff['removedLineCount']} 行。",
+                "reason": "把 Red 指出的问题落实到新版报告正文。",
+                "before": before_excerpt,
+                "after": after_excerpt,
+            }
+        )
+    elif blue_revision is not None:
+        stable_excerpt = _trim_text(after_markdown, 360)
+        changes.append(
+            {
+                "issueId": "复核结果",
+                "change": "本轮完成逐项复核，未改变已经通过证据约束的正文。",
+                "reason": "没有发现需要改写的事实性内容，保留当前报告版本。",
+                "before": stable_excerpt,
+                "after": stable_excerpt,
+            }
+        )
     return {
         "round": round_index,
         "redIssues": issues,
-        "redSummary": getattr(red_review, "summary", ""),
+        "redSummary": _localize_review_text(getattr(red_review, "summary", "")),
         "blueRevision": {
             "fixedIssueIds": list(getattr(blue_revision, "fixed_issue_ids", []) or []),
             "remainingIssueIds": list(getattr(blue_revision, "remaining_issue_ids", []) or []),
-            "revisionNotes": list(getattr(blue_revision, "revision_notes", []) or []),
+            "revisionNotes": [
+                _localize_review_text(note)
+                for note in getattr(blue_revision, "revision_notes", []) or []
+            ],
             "changes": changes,
         },
         "status": "PASSED" if getattr(red_review, "passed", False) and not issues else "REVISED",
     }
+
+
+def _localize_review_text(value: Any) -> str:
+    text = str(value or "")
+    section_labels = {
+        "Background": "研究背景",
+        "Key Findings": "关键发现",
+        "Analysis and Discussion": "分析与讨论",
+        "Limitations": "研究限制",
+        "Recommendations": "行动建议",
+        "Conclusion": "结论",
+        "References": "参考来源",
+    }
+    missing = re.fullmatch(r"Report is missing the (.+) section\.", text)
+    if missing:
+        section = missing.group(1)
+        return f"报告缺少“{section_labels.get(section, section)}”章节。"
+    replacements = {
+        "Report does not contain any citations.": "报告没有任何引用。",
+        "No findings were available to support the report.": "没有可用于支撑报告的批准发现。",
+        "Report markdown is very short.": "报告正文过短，尚未形成完整论述。",
+        "Key Findings appears to summarize fewer items than the findings list.": "关键发现没有完整覆盖已批准发现。",
+        "One or more Key Findings bullets are missing citation markers.": "一条或多条关键发现缺少引用标记。",
+        "Critic review reported additional concerns.": "Critic 质量检查还发现了需要处理的问题。",
+        "No major issues found.": "本轮未发现新的主要问题。",
+        "Analysis and Discussion is too short to explain relationships or trade-offs.": "分析与讨论过短，没有解释因素之间的关系或权衡。",
+        "Conclusion is too short to synthesize the research answer.": "结论过短，没有综合回答研究问题。",
+        "Add a ": "补充“",
+        " section to the report.": "”章节。",
+        "Address the critic review concerns in the revision pass.": "逐项处理 Critic 提出的质量问题。",
+    }
+    if text in replacements:
+        return replacements[text]
+    found = re.fullmatch(r"Found (\d+) issue\(s\) in the report review\.", text)
+    if found:
+        return f"本轮审查发现 {found.group(1)} 个需要处理的问题。"
+    addressed = re.fullmatch(r"Addressed issue ([^:]+): (.+)", text)
+    if addressed:
+        return f"已处理 {addressed.group(1)}：{_localize_review_text(addressed.group(2))}"
+    for source, target in replacements.items():
+        text = text.replace(source, target)
+    return text
 
 
 def _summarize_step(
@@ -676,6 +754,16 @@ INDEX_HTML = """<!doctype html>
       cursor: pointer;
     }
     button:disabled { opacity: .65; cursor: progress; }
+    .citation-link {
+      min-width: 0;
+      height: auto;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--accent);
+      text-decoration: underline;
+      font: inherit;
+    }
     .status { color: var(--muted); font-size: 13px; min-height: 18px; margin-bottom: 14px; }
     .metrics {
       display: grid;
@@ -776,6 +864,19 @@ INDEX_HTML = """<!doctype html>
     }
     .list { margin: 8px 0 0; padding-left: 18px; color: var(--ink); }
     .list li { margin-bottom: 5px; }
+    .change-box, .evidence-source {
+      border-left: 3px solid var(--accent);
+      background: #f7faf9;
+      padding: 10px 12px;
+      margin-top: 9px;
+      line-height: 1.5;
+    }
+    .change-box pre, .evidence-source pre {
+      background: #eef2f1;
+      color: var(--ink);
+      max-height: 220px;
+      margin: 7px 0;
+    }
     .error { color: var(--danger); font-weight: 700; }
     @media (max-width: 980px) {
       main { padding: 16px; }
@@ -802,29 +903,29 @@ INDEX_HTML = """<!doctype html>
     <section class="layout">
       <div>
         <section class="panel">
-          <h2>最终报告 Final Report（最终生成的 Markdown 报告）</h2>
+          <h2>最终研究报告 <small>Final Report</small></h2>
           <article id="finalReport" class="report"></article>
         </section>
         <section class="panel split">
           <div>
-            <h2>初始草稿 Initial Draft（Writer 写出的第一版）</h2>
+            <h2>Writer 初始草稿 <small>Initial Draft</small></h2>
             <pre id="initialDraft"></pre>
           </div>
           <div>
-            <h2>审查过程与修订差异 Review Stream</h2>
+            <h2>Red / Blue 审查与修订流 <small>Review Stream</small></h2>
             <pre id="reportDiff"></pre>
           </div>
         </section>
         <section class="panel">
-          <h2>Review Handoffs（Red/Blue 审查交接）</h2>
+          <h2>逐轮审查结果 <small>Review Rounds</small></h2>
           <div id="reviewRounds" class="timeline"></div>
         </section>
         <section class="panel">
-          <h2>协作交接 Collaboration Handoffs</h2>
+          <h2>Agent 协作交接 <small>Collaboration Handoffs</small></h2>
           <div id="handoffs" class="timeline"></div>
         </section>
         <section class="panel">
-          <h2>证据结论与引用 Findings & Citations（事实结论和来源标记）</h2>
+          <h2>结论与证据 <small>Findings & Citations</small></h2>
           <div id="findings"></div>
         </section>
       </div>
@@ -834,7 +935,7 @@ INDEX_HTML = """<!doctype html>
           <div id="steps" class="timeline"></div>
         </section>
         <section class="panel">
-          <h2>Citation Validation（引用校验）</h2>
+          <h2>引用校验与证据来源 <small>Citation Validation</small></h2>
           <div id="citationValidation"></div>
         </section>
       </aside>
@@ -848,6 +949,10 @@ INDEX_HTML = """<!doctype html>
     let currentReviewRounds = [];
     let currentHandoffs = [];
     let streamBuffers = {};
+    let streamQueues = {};
+    let streamRendering = {};
+    let streamFinalValues = {};
+    let pendingCompletedPayload = null;
 
     runButton.addEventListener("click", runResearch);
     statusEl.textContent = "请输入研究问题后，点击“生成报告”启动研究。";
@@ -867,6 +972,7 @@ INDEX_HTML = """<!doctype html>
           throw new Error(payload.error || "请求失败");
         }
         await readSseStream(response, handleStreamEvent);
+        await waitForStreamQueues();
       } catch (error) {
         statusEl.innerHTML = `<span class="error">${escapeHtml(error.message)}</span>`;
       } finally {
@@ -879,6 +985,10 @@ INDEX_HTML = """<!doctype html>
       currentReviewRounds = [];
       currentHandoffs = [];
       streamBuffers = {};
+      streamQueues = {};
+      streamRendering = {};
+      streamFinalValues = {};
+      pendingCompletedPayload = null;
       document.getElementById("metrics").innerHTML = "";
       document.getElementById("finalReport").innerHTML = "<p>等待模型生成最终报告...</p>";
       document.getElementById("initialDraft").textContent = "";
@@ -956,43 +1066,31 @@ INDEX_HTML = """<!doctype html>
       }
       if (event === "report_stream_start") {
         streamBuffers[data.target] = "";
+        streamQueues[data.target] = [];
+        streamFinalValues[data.target] = null;
         if (data.target === "reviewTranscript") {
-          appendReviewTranscript("\\n--- 审查流开始 ---\\n");
+          enqueueStreamDelta(data.target, "\\n--- 审查流开始 ---\\n");
         } else {
           updateStreamTarget(data.target, "");
         }
         return;
       }
       if (event === "report_delta") {
-        streamBuffers[data.target] = (streamBuffers[data.target] || "") + (data.delta || "");
-        if (data.target === "reviewTranscript") {
-          appendReviewTranscript(data.delta || "");
-        } else {
-          updateStreamTarget(data.target, streamBuffers[data.target]);
-        }
+        enqueueStreamDelta(data.target, data.delta || "");
         return;
       }
       if (event === "report_stream_done") {
         const value = data.markdown || data.text || streamBuffers[data.target] || "";
+        streamFinalValues[data.target] = value;
         if (data.target === "reviewTranscript") {
-          appendReviewTranscript("\\n--- 审查流结束 ---\\n");
-        } else {
-          updateStreamTarget(data.target, value);
+          enqueueStreamDelta(data.target, "\\n--- 审查流结束 ---\\n");
         }
+        flushCompletedPayloadWhenReady();
         return;
       }
       if (event === "run_completed") {
-        renderPayload(data.payload);
-        const fallbackCount = data.payload?.modelRun?.fallbackCount || 0;
-        const degradationReasons = data.payload?.degradationReasons || [];
-        if (fallbackCount || degradationReasons.length) {
-          const firstError = firstStepError(data.payload?.stepImpacts || []);
-          statusEl.textContent = firstError
-            ? `报告已生成，但需要复查。首个问题：${firstError}`
-            : `报告已生成，但需要复查：${degradationReasons[0] || "部分步骤未使用真实模型或来源"}`;
-        } else {
-          statusEl.textContent = "报告已生成：全部 Agent 均完成模型调用。";
-        }
+        pendingCompletedPayload = data.payload;
+        flushCompletedPayloadWhenReady();
         return;
       }
       if (event === "run_error") {
@@ -1010,9 +1108,72 @@ INDEX_HTML = """<!doctype html>
 
     function updateStreamTarget(target, value) {
       if (target === "initialDraft") {
-        document.getElementById("initialDraft").textContent = value;
+        document.getElementById("initialDraft").textContent = localizeMarkdownForDisplay(value);
       } else if (target === "finalReport") {
         document.getElementById("finalReport").innerHTML = renderMarkdown(value);
+      }
+    }
+
+    function enqueueStreamDelta(target, delta) {
+      if (!delta) return;
+      if (!streamQueues[target]) streamQueues[target] = [];
+      streamQueues[target].push(delta);
+      if (streamRendering[target]) return;
+      streamRendering[target] = true;
+      requestAnimationFrame(() => drainStreamQueue(target));
+    }
+
+    function drainStreamQueue(target) {
+      const queue = streamQueues[target] || [];
+      if (!queue.length) {
+        streamRendering[target] = false;
+        const finalValue = streamFinalValues[target];
+        if (finalValue && target !== "reviewTranscript") {
+          streamBuffers[target] = finalValue;
+          updateStreamTarget(target, finalValue);
+        }
+        flushCompletedPayloadWhenReady();
+        return;
+      }
+      const value = queue.shift();
+      const piece = value.slice(0, 24);
+      const remainder = value.slice(24);
+      if (remainder) queue.unshift(remainder);
+      streamBuffers[target] = (streamBuffers[target] || "") + piece;
+      if (target === "reviewTranscript") {
+        appendReviewTranscript(piece);
+      } else {
+        updateStreamTarget(target, streamBuffers[target]);
+      }
+      window.setTimeout(() => requestAnimationFrame(() => drainStreamQueue(target)), 8);
+    }
+
+    function streamsAreBusy() {
+      return Object.values(streamRendering).some(Boolean)
+        || Object.values(streamQueues).some(queue => (queue || []).length > 0);
+    }
+
+    function waitForStreamQueues() {
+      return new Promise(resolve => {
+        const check = () => streamsAreBusy() ? window.setTimeout(check, 20) : resolve();
+        check();
+      });
+    }
+
+    function flushCompletedPayloadWhenReady() {
+      if (!pendingCompletedPayload || streamsAreBusy()) return;
+      const payload = pendingCompletedPayload;
+      pendingCompletedPayload = null;
+      renderPayload(payload);
+      const fallbackCount = payload?.modelRun?.fallbackCount || 0;
+      const degradationReasons = payload?.degradationReasons || [];
+      if (fallbackCount || degradationReasons.length) {
+        const firstError = firstStepError(payload?.stepImpacts || []);
+        statusEl.textContent = firstError
+          ? `报告已生成，但需要复查。首个问题：${firstError}`
+          : `报告已生成，但需要复查：${degradationReasons[0] || "部分步骤未使用真实模型或来源"}`;
+      } else {
+        statusEl.textContent = "报告已生成：全部 Agent 均完成模型调用。";
       }
     }
 
@@ -1025,7 +1186,7 @@ INDEX_HTML = """<!doctype html>
     function renderPayload(payload) {
       renderMetrics(payload.reportMetrics || {});
       document.getElementById("finalReport").innerHTML = renderMarkdown(payload.finalReportMarkdown || "");
-      document.getElementById("initialDraft").textContent = payload.initialReportMarkdown || "";
+      document.getElementById("initialDraft").textContent = localizeMarkdownForDisplay(payload.initialReportMarkdown || "");
       document.getElementById("reportDiff").textContent = buildReviewTranscript(payload);
       currentSteps = payload.stepImpacts || [];
       renderSteps(currentSteps);
@@ -1066,11 +1227,12 @@ INDEX_HTML = """<!doctype html>
       document.getElementById("handoffs").innerHTML = handoffs.map(handoff => `
         <article class="step">
           <div class="step-head">
-            <h3>${escapeHtml(handoff.senderAgent || "Agent")} → ${escapeHtml(handoff.recipientAgent || "Agent")}</h3>
-            <span class="badge ${handoff.status === "REVISION_REQUESTED" ? "warn" : ""}">${escapeHtml(handoff.status || "已交接")}</span>
+            <h3>${escapeHtml(agentLabel(handoff.senderAgent))} → ${escapeHtml(agentLabel(handoff.recipientAgent))}</h3>
+            <span class="badge ${handoff.status === "REVISION_REQUESTED" ? "warn" : ""}">${escapeHtml(handoff.statusLabel || handoffStatusLabel(handoff.status))}</span>
           </div>
-          <p class="impact">${escapeHtml(handoff.reason || handoff.summary || "已完成成果交接。")}</p>
-          ${handoff.action ? `<small>处理动作：${escapeHtml(handoff.action)}</small>` : ""}
+          <p class="impact"><strong>交接内容：</strong>${escapeHtml(handoff.artifactLabel || "协作工件")}</p>
+          <p>${escapeHtml(handoff.contentSummary || handoff.reason || handoff.summary || "已完成成果交接。")}</p>
+          <small><strong>接收方动作：</strong>${escapeHtml(handoff.actionLabel || handoffActionLabel(handoff.action))}</small>
         </article>
       `).join("");
     }
@@ -1092,11 +1254,18 @@ INDEX_HTML = """<!doctype html>
         const changes = revision.changes || [];
         const revisionList = [
           ...notes,
-          ...changes.map(item => `${item.issueId || "未关联问题"}：${item.change || "未提供具体修改"}（原因：${item.reason || "回应审查意见"}）`),
           ...fixed.filter(item => !changes.some(change => change.issueId === item)).map(item => `已修复：${item}`),
           ...remaining.map(item => `仍待复核：${item}`)
         ]
           .map(item => `<li>${escapeHtml(item)}</li>`).join("");
+        const changeList = changes.map(item => `
+          <div class="change-box">
+            <strong>${escapeHtml(item.issueId || "正文修订")}</strong>：${escapeHtml(item.change || "未提供具体修改")}
+            <p><small>修改原因：${escapeHtml(item.reason || "回应审查意见")}</small></p>
+            ${item.before ? `<p><strong>修改前：</strong></p><pre>${escapeHtml(item.before)}</pre>` : ""}
+            ${item.after ? `<p><strong>修改后：</strong></p><pre>${escapeHtml(item.after)}</pre>` : ""}
+          </div>
+        `).join("");
         return `
           <article class="step">
             <div class="step-head">
@@ -1105,7 +1274,7 @@ INDEX_HTML = """<!doctype html>
             </div>
             <p class="impact">${escapeHtml(review.redSummary || "Red 提交审查结论，Blue 据此完成受控修订。")}</p>
             <details open><summary>Red 发现的问题</summary>${issueList}</details>
-            ${revisionList ? `<details open><summary>Blue 修订结果</summary><ul class="list">${revisionList}</ul></details>` : ""}
+            ${(revisionList || changeList) ? `<details open><summary>Blue 具体修改</summary>${revisionList ? `<ul class="list">${revisionList}</ul>` : ""}${changeList}</details>` : ""}
           </article>
         `;
       }).join("");
@@ -1133,12 +1302,16 @@ INDEX_HTML = """<!doctype html>
         : "";
       const sources = Array.isArray(validation.sources) ? validation.sources : [];
       const sourceList = sources.length
-        ? `<details open><summary>已校验的证据来源</summary><ul class="list">${sources.map(source => {
+        ? `<details open><summary>已校验的证据来源（${sources.length} 条）</summary>${sources.map(source => {
             const label = `${source.citationId || "Citation"}：${source.sourceTitle || "未命名来源"}`;
             const link = externalLink(source.sourceUrl, source.sourceUrl || "无公开链接");
             const status = source.status === "linked" ? "已关联" : "待复核";
-            return `<li><strong>${escapeHtml(label)}</strong>（${escapeHtml(status)}）<br>${link}</li>`;
-          }).join("")}</ul></details>`
+            const location = source.startChar == null ? "未记录位置" : `字符 ${source.startChar}–${source.endChar}`;
+            return `<article id="citation-${escapeHtml(source.citationId || "unknown")}" class="evidence-source"><strong>${escapeHtml(label)}</strong>（${escapeHtml(status)}）<br>
+              <small>原文位置：${escapeHtml(location)} · Evidence ID：${escapeHtml(source.evidenceId || "无")}</small>
+              <pre>${escapeHtml(source.evidenceText || source.quote || "未提供证据切片")}</pre>
+              ${link}</article>`;
+          }).join("")}</details>`
         : "<p>本次报告没有可显示的证据来源。</p>";
       document.getElementById("citationValidation").innerHTML = `
         <p class="validation-summary ${passed ? "ok" : "warn"}">${escapeHtml(summary)}</p>
@@ -1163,6 +1336,8 @@ INDEX_HTML = """<!doctype html>
         for (const change of review.blueRevision?.changes || []) {
           blue.push(`- ${change.issueId || "未关联问题"}：${change.change || "未提供具体修改"}`);
           blue.push(`  原因：${change.reason || "回应审查意见"}`);
+          if (change.before) blue.push(`  修改前：${change.before}`);
+          if (change.after) blue.push(`  修改后：${change.after}`);
         }
         return [...red, "", ...blue, ""];
       });
@@ -1242,14 +1417,37 @@ INDEX_HTML = """<!doctype html>
       return findings.map((finding, index) => `
         <article class="step">
           <div class="step-head">
-            <h3>Finding ${index + 1}（证据结论）</h3>
-            <span class="badge">${escapeHtml(finding.citationId || "source（来源）")}</span>
+            <h3>结论 ${index + 1}</h3>
+            <span class="badge ${finding.citationId ? "" : "warn"}">${escapeHtml(finding.citationId || finding.citationStatus || "待补证")}</span>
           </div>
-          <p><strong>Claim（结论）:</strong> ${escapeHtml(finding.claim || "")}</p>
-          <p><strong>Evidence（证据）:</strong> ${escapeHtml(finding.evidence || "")}</p>
-          <small>${escapeHtml(finding.sourceUrl || "")}</small>
+          <p><strong>结论：</strong>${escapeHtml(finding.claim || "")}</p>
+          <p><strong>原文证据：</strong>${escapeHtml(finding.evidence || "")}</p>
+          <small>${escapeHtml(finding.sourceTitle || "")}${finding.sourceUrl ? ` · ${escapeHtml(finding.sourceUrl)}` : ""}</small>
         </article>
       `).join("");
+    }
+
+    function agentLabel(agent) {
+      const labels = {
+        PlannerAgent: "Planner（研究规划）",
+        SearcherAgent: "Searcher（资料发现）",
+        ReaderAgent: "Reader（正文取证）",
+        WriterAgent: "Writer（报告撰写）",
+        CriticAgent: "Critic（质量检查）",
+        RedAgent: "Red（质疑审查）",
+        BlueAgent: "Blue（修订回应）"
+      };
+      return labels[agent] || agent || "Agent";
+    }
+
+    function handoffActionLabel(action) {
+      return ({ consume: "接收并用于下一步", request_revision: "退回并请求修订", revalidate: "修订后交回复核" })[action]
+        || action || "接收并用于下一步";
+    }
+
+    function handoffStatusLabel(status) {
+      return ({ ACKNOWLEDGED: "已接收", REVISION_REQUESTED: "已退回修订", PUBLISHED: "已发布" })[status]
+        || status || "已交接";
     }
 
     function metricLabel(key) {
@@ -1294,6 +1492,7 @@ INDEX_HTML = """<!doctype html>
     }
 
     function renderMarkdown(markdown) {
+      markdown = localizeMarkdownForDisplay(markdown);
       const lines = markdown.split(/\\r?\\n/);
       let html = "";
       let inList = false;
@@ -1305,20 +1504,43 @@ INDEX_HTML = """<!doctype html>
         }
         if (line.startsWith("# ")) {
           if (inList) { html += "</ul>"; inList = false; }
-          html += `<h1>${escapeHtml(line.slice(2))}</h1>`;
+          html += `<h1>${renderInlineMarkdown(line.slice(2))}</h1>`;
         } else if (line.startsWith("## ")) {
           if (inList) { html += "</ul>"; inList = false; }
-          html += `<h2>${escapeHtml(line.slice(3))}</h2>`;
+          html += `<h2>${renderInlineMarkdown(line.slice(3))}</h2>`;
         } else if (line.startsWith("- ")) {
           if (!inList) { html += "<ul>"; inList = true; }
-          html += `<li>${escapeHtml(line.slice(2))}</li>`;
+          html += `<li>${renderInlineMarkdown(line.slice(2))}</li>`;
         } else {
           if (inList) { html += "</ul>"; inList = false; }
-          html += `<p>${escapeHtml(line)}</p>`;
+          html += `<p>${renderInlineMarkdown(line)}</p>`;
         }
       }
       if (inList) html += "</ul>";
       return html;
+    }
+
+    function localizeMarkdownForDisplay(markdown) {
+      return String(markdown || "")
+        .replace(/^# Research Report:/gm, "# 研究报告：")
+        .replace(/^Question:/gm, "研究问题：")
+        .replace(/^## Background$/gm, "## 研究背景")
+        .replace(/^## Key Findings$/gm, "## 关键发现")
+        .replace(/^## Analysis and Discussion$/gm, "## 分析与讨论")
+        .replace(/^## Limitations$/gm, "## 研究限制")
+        .replace(/^## Recommendations$/gm, "## 行动建议")
+        .replace(/^## Conclusion$/gm, "## 结论")
+        .replace(/^## References$/gm, "## 参考来源");
+    }
+
+    function renderInlineMarkdown(value) {
+      return escapeHtml(value).replace(/\\[(C\\d+)\\]/g, (_, citationId) =>
+        `<button class="citation-link" title="查看 ${citationId} 的原文证据" onclick="scrollToCitation('${citationId}')">[${citationId}]</button>`
+      );
+    }
+
+    function scrollToCitation(citationId) {
+      document.getElementById(`citation-${citationId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
 
     function escapeHtml(value) {
@@ -1342,6 +1564,7 @@ class ReportWorkbenchHandler(BaseHTTPRequestHandler):
     或连续的流水线事件流。
     """
     server_version = "DeepResearchWorkbench/1.0"
+    protocol_version = "HTTP/1.1"
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
@@ -1401,11 +1624,15 @@ class ReportWorkbenchHandler(BaseHTTPRequestHandler):
         """
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Cache-Control", "no-cache, no-transform")
+        self.send_header("X-Accel-Buffering", "no")
+        self.send_header("Content-Encoding", "identity")
         # 浏览器前端在读取到流结束后才会恢复“生成报告”按钮。这个端点不是
         # 永久订阅，而是一轮任务对应一条有限事件流，因此完成后必须关闭连接。
         self.send_header("Connection", "close")
         self.end_headers()
+        self.wfile.write(b": stream-connected\n\n")
+        self.wfile.flush()
 
         def emit(event_type: str, data: dict) -> None:
             encoded = (

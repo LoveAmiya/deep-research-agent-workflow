@@ -15,7 +15,9 @@ from report_workbench import (
 )
 from agents.base_agent import AgentContext
 from agents.writer_agent import WriterAgent
-from core.schema import Finding, ResearchPlan, ResearchQuestion
+from agents.blue_agent import BlueAgent
+from agents.critic_agent import CriticAgent
+from core.schema import Finding, RedReviewResult, ResearchPlan, ResearchQuestion, ResearchReport, ReviewIssue
 from tools.citation_tool import CitationRegistry
 
 
@@ -115,11 +117,65 @@ class TestReportWorkbench(unittest.TestCase):
         self.assertIn("flushCompletedPayloadWhenReady", INDEX_HTML)
         self.assertNotIn('if (event === "run_completed") {\n        renderPayload(data.payload);', INDEX_HTML)
 
+    def test_default_analysis_has_six_distinct_points_and_a_real_discussion(self) -> None:
+        payload = build_report_workbench_payload("影响企业采用开源大语言模型的主要因素有哪些？")
+        markdown = payload["finalReportMarkdown"]
+        key_body = markdown.split("## Key Findings", 1)[1].split("\n## ", 1)[0]
+        discussion = markdown.split("## Analysis and Discussion", 1)[1].split("\n## ", 1)[0]
+        conclusion = markdown.split("## Conclusion", 1)[1].split("\n## ", 1)[0]
+
+        self.assertGreaterEqual(len([line for line in key_body.splitlines() if line.startswith("- ")]), 5)
+        self.assertGreaterEqual(len(set(line for line in key_body.splitlines() if line.startswith("- "))), 5)
+        self.assertGreater(len(discussion.strip()), 240)
+        self.assertGreater(len(conclusion.strip()), 120)
+
+    def test_review_rounds_expose_actual_before_and_after_content(self) -> None:
+        payload = build_report_workbench_payload("影响企业采用开源大语言模型的主要因素有哪些？")
+        changes = [
+            change
+            for review in payload["reviewRounds"]
+            for change in review["blueRevision"]["changes"]
+        ]
+
+        self.assertTrue(changes)
+        self.assertTrue(any(change.get("before") or change.get("after") for change in changes))
+        self.assertTrue(all(change.get("change") for change in changes))
+
+    def test_quality_gate_and_blue_revision_require_full_argument_structure(self) -> None:
+        report = ResearchReport(
+            title="研究报告",
+            question="问题",
+            sections=[],
+            citations=[],
+            markdown="# 研究报告\n\n## Background\n\n背景。\n\n## Key Findings\n\n暂无。\n\n## Conclusion\n\n结论。\n\n## References\n\n暂无。",
+        )
+        critic = CriticAgent().run(AgentContext(
+            task_id="critic_task",
+            inputs={"report": report, "findings": []},
+        )).output
+
+        self.assertFalse(critic["passed"])
+        self.assertTrue(any("Analysis and Discussion" in issue for issue in critic["issues"]))
+
+        red = RedReviewResult(
+            passed=False,
+            issues=[ReviewIssue("R1", "structure", "high", issue) for issue in critic["issues"]],
+            summary="结构不完整",
+        )
+        blue = BlueAgent().run(AgentContext(
+            task_id="blue_task",
+            inputs={"report": report, "red_review": red, "findings": []},
+        )).output.revised_report.markdown
+
+        self.assertIn("## Analysis and Discussion", blue)
+        self.assertIn("## Limitations", blue)
+        self.assertIn("## Recommendations", blue)
+
     def test_user_workbench_does_not_render_raw_agent_or_validation_json(self) -> None:
         self.assertNotIn("JSON.stringify(payload.citationValidation", INDEX_HTML)
         self.assertNotIn("step.outputPreview", INDEX_HTML)
         self.assertNotIn('window.addEventListener("load", runResearch)', INDEX_HTML)
-        self.assertIn('appendReviewTranscript("\\n--- 审查流开始 ---\\n")', INDEX_HTML)
+        self.assertIn('enqueueStreamDelta(data.target, "\\n--- 审查流开始 ---\\n")', INDEX_HTML)
 
     def test_user_workbench_renders_review_round_handoffs(self) -> None:
         self.assertIn('id="reviewRounds"', INDEX_HTML)

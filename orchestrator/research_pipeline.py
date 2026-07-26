@@ -256,7 +256,7 @@ def build_research_pipeline_components(
                     artifact_ids=[artifact.artifact_id],
                     reason=f"{agent.name} 已将 {artifact_type} 交给 {recipient}。",
                 )
-                _emit_handoff_event(event_sink, handoff, artifact.summary)
+                _emit_handoff_event(event_sink, handoff, artifact)
             if checkpoint is not None:
                 checkpoint.metadata["research_ledger"] = ledger.to_dict()
             _emit_readable_artifact_stream(event_sink, artifact_type, result.output)
@@ -452,7 +452,7 @@ def _emit_pipeline_event(event_sink, event_type, context, agent_name, artifact_t
     )
 
 
-def _emit_handoff_event(event_sink, handoff, summary: str) -> None:
+def _emit_handoff_event(event_sink, handoff, artifact) -> None:
     if event_sink is None:
         return
     event_sink(
@@ -463,7 +463,22 @@ def _emit_handoff_event(event_sink, handoff, summary: str) -> None:
                 "recipientAgent": handoff.recipient_agent,
                 "status": handoff.status,
                 "reason": handoff.reason,
-                "summary": summary,
+                "summary": artifact.summary,
+                "artifactIds": list(handoff.artifact_ids),
+                "artifactTypes": [artifact.artifact_type],
+                "artifactLabel": {
+                    "research_brief": "研究任务书（问题拆解、子问题与检索方向）",
+                    "candidate_sources": "候选资料清单（标题、链接与来源摘要）",
+                    "approved_findings": "批准发现（结论与证据）",
+                    "initial_report": "初始报告（Writer 第一版正文）",
+                    "critic_review": "质量检查单（结构、论证与引用问题）",
+                    "red_review": "Red 审查单（问题、依据与建议）",
+                    "blue_revision": "Blue 修订稿（处理结果与新版报告）",
+                }.get(artifact.artifact_type, artifact.artifact_type),
+                "contentSummary": artifact.summary,
+                "action": handoff.action,
+                "actionLabel": "接收并用于下一步" if handoff.action == "consume" else handoff.action,
+                "statusLabel": "已接收" if handoff.status == "ACKNOWLEDGED" else handoff.status,
             }
         },
     )
@@ -497,8 +512,8 @@ def _emit_readable_artifact_stream(event_sink, artifact_type: str, output: objec
     if not text:
         return
     event_sink("report_stream_start", {"target": target})
-    for index in range(0, len(text), 240):
-        event_sink("report_delta", {"target": target, "delta": text[index : index + 240]})
+    for index in range(0, len(text), 80):
+        event_sink("report_delta", {"target": target, "delta": text[index : index + 80]})
     event_sink("report_stream_done", {"target": target, "text": text})
 
 

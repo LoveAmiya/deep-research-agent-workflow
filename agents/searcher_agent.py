@@ -140,15 +140,20 @@ class SearcherAgent(BaseAgent):
         return results[:max_results]
 
     def _deterministic_results(self, plan: ResearchPlan) -> List[SearchResult]:
+        dimensions = [
+            ("成本与基础设施", "企业需要同时评估模型许可、推理算力、部署维护和规模扩张带来的总拥有成本。"),
+            ("治理与合规", "数据边界、许可证义务、模型责任和审计能力会影响开源大语言模型能否进入正式业务流程。"),
+            ("系统集成", "与现有数据平台、身份权限、业务应用和运维体系的集成工作量会直接影响落地周期。"),
+            ("能力与可控性", "模型在目标任务上的效果、可定制程度、版本稳定性和输出可控性需要结合具体场景验证。"),
+            ("人才与运营", "企业是否具备模型评测、微调、部署、安全响应和持续监控能力会影响长期运营可行性。"),
+            ("业务价值", "采用决策需要把技术指标转化为效率、质量、风险或收入等可衡量的业务结果。"),
+        ]
+        selected_dimensions = dimensions[:1] if len(plan.search_queries) == 1 else dimensions
         results: List[SearchResult] = []
-        for index, query in enumerate(plan.search_queries, start=1):
-            snippet = (
-                f"Mock evidence for '{query}' indicates that enterprise adoption depends on "
-                "cost control, governance readiness, integration effort, and measurable business value."
-            )
+        for index, (dimension, snippet) in enumerate(selected_dimensions, start=1):
             results.append(
                 SearchResult(
-                    title=f"Mock Source {index} for {plan.question}",
+                    title=f"{dimension}分析线索（本地演示）",
                     url=f"mock://source/{index}",
                     snippet=snippet,
                     source="mock",

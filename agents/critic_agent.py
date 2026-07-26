@@ -30,21 +30,41 @@ class CriticAgent(BaseAgent):
 
         markdown = report.markdown or ""
         citation_registry = context.inputs.get("citation_registry")
+        required_sections = [
+            "Background",
+            "Key Findings",
+            "Analysis and Discussion",
+            "Limitations",
+            "Recommendations",
+            "Conclusion",
+            "References",
+        ]
         checks = {
             "has_title": markdown.startswith("# "),
-            "has_key_findings": "## Key Findings" in markdown,
-            "has_references": "## References" in markdown,
+            **{f"has_{section.lower().replace(' ', '_')}": f"## {section}" in markdown for section in required_sections},
             "citation_count": len(report.citations),
         }
         issues = []
         if not checks["has_title"]:
             issues.append("Report is missing a markdown title.")
-        if not checks["has_key_findings"]:
-            issues.append("Report is missing the Key Findings section.")
-        if not checks["has_references"]:
-            issues.append("Report is missing the References section.")
+        for section in required_sections:
+            if f"## {section}" not in markdown:
+                issues.append(f"Report is missing the {section} section.")
         if checks["citation_count"] == 0:
             issues.append("Report does not contain any citations.")
+
+        key_findings = self._extract_section(markdown, "Key Findings")
+        checks["key_finding_bullet_count"] = len(
+            [line for line in key_findings.splitlines() if line.strip().startswith("- ")]
+        )
+        discussion = self._extract_section(markdown, "Analysis and Discussion")
+        conclusion = self._extract_section(markdown, "Conclusion")
+        checks["discussion_character_count"] = len(discussion.strip())
+        checks["conclusion_character_count"] = len(conclusion.strip())
+        if "## Analysis and Discussion" in markdown and len(discussion.strip()) < 120:
+            issues.append("Analysis and Discussion is too short to explain relationships or trade-offs.")
+        if "## Conclusion" in markdown and len(conclusion.strip()) < 60:
+            issues.append("Conclusion is too short to synthesize the research answer.")
 
         if citation_registry is not None:
             citation_validation = CitationValidator().validate_report_citations(report, citation_registry)
@@ -103,6 +123,16 @@ class CriticAgent(BaseAgent):
             output=review,
             metadata=metadata,
         )
+
+    @staticmethod
+    def _extract_section(markdown: str, title: str) -> str:
+        marker = f"## {title}"
+        start = markdown.find(marker)
+        if start < 0:
+            return ""
+        body_start = start + len(marker)
+        next_heading = markdown.find("\n## ", body_start)
+        return markdown[body_start:] if next_heading < 0 else markdown[body_start:next_heading]
 
     def _write_memory(self, context: AgentContext, review: dict, metadata: dict) -> None:
         if context.memory is None:
