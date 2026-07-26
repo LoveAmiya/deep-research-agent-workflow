@@ -345,7 +345,8 @@ class TestReportWorkbench(unittest.TestCase):
 
         self.assertEqual(len(payload["reviewRounds"]), 2)
         self.assertEqual([item["round"] for item in payload["reviewRounds"]], [1, 2])
-        self.assertIn("review_round_started", [event_type for event_type, _ in events])
+        live_rounds = [data["round"] for event_type, data in events if event_type == "review_round_started"]
+        self.assertEqual(live_rounds, [1, 2])
         review_streams = [
             data
             for event_type, data in events

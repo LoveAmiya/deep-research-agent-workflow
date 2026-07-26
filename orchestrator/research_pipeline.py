@@ -137,6 +137,10 @@ def run_research_pipeline(
         checkpoint=checkpoint,
         event_sink=event_sink,
         require_llm=require_llm,
+        review_rounds=(
+            1 + max(1, getattr(red_blue_loop_config, "max_rounds", 1))
+            if use_red_blue_loop else 1
+        ),
     )
     graph = components["graph"]
     handlers = components["handlers"]
@@ -193,6 +197,7 @@ def build_research_pipeline_components(
     checkpoint: RunCheckpoint | None = None,
     event_sink=None,
     require_llm: bool = False,
+    review_rounds: int = 1,
 ) -> dict:
     """创建 Agent 与 handler，将 DAG 输出转换为下游输入。
 
@@ -364,6 +369,11 @@ def build_research_pipeline_components(
         )
 
     def red_handler(outputs, node):
+        if event_sink is not None:
+            event_sink(
+                "review_round_started",
+                {"round": 1, "maxRounds": max(1, review_rounds)},
+            )
         return run_and_publish(
             red,
             context(
@@ -382,7 +392,7 @@ def build_research_pipeline_components(
         )
 
     def blue_handler(outputs, node):
-        return run_and_publish(
+        result = run_and_publish(
             blue,
             context(
                 node.task_id,
@@ -398,6 +408,37 @@ def build_research_pipeline_components(
             None,
             ("red_review",),
         )
+        if event_sink is not None and result.success:
+            red_review = outputs["red_review_task"].output
+            blue_revision = result.output
+            event_sink(
+                "review_round_completed",
+                {
+                    "round": 1,
+                    "review": {
+                        "round": 1,
+                        "redSummary": red_review.summary,
+                        "redIssues": [
+                            {
+                                "issueId": issue.issue_id,
+                                "severity": issue.severity,
+                                "message": issue.message,
+                                "evidence": issue.evidence or "",
+                                "suggestion": issue.suggestion or "",
+                            }
+                            for issue in red_review.issues
+                        ],
+                        "blueRevision": {
+                            "fixedIssueIds": list(blue_revision.fixed_issue_ids),
+                            "remainingIssueIds": list(blue_revision.remaining_issue_ids),
+                            "revisionNotes": list(blue_revision.revision_notes),
+                            "changes": [],
+                        },
+                        "status": "PASSED" if red_review.passed else "REVISED",
+                    },
+                },
+            )
+        return result
 
     handlers = {
         "planner_task": planner_handler,

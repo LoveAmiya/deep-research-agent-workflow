@@ -82,9 +82,6 @@ def build_report_workbench_payload(
     payload = summarize_pipeline_result(result)
     payload["modelRun"]["mode"] = collaborative_mode if payload["modelRun"]["llmCallCount"] else "collaborative_dag_deterministic"
     if event_sink is not None:
-        for review in payload["reviewRounds"]:
-            event_sink("review_round_started", {"round": review["round"], "maxRounds": review_rounds})
-            event_sink("review_round_completed", {"round": review["round"], "review": review})
         event_sink("report_validated", {"citationValidation": payload["citationValidation"]})
         _emit_report_stream(event_sink, "finalReport", payload["finalReportMarkdown"])
         event_sink("report_completed", {"finalReportMarkdown": payload["finalReportMarkdown"]})
