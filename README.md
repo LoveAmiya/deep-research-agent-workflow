@@ -1,83 +1,81 @@
 # DeepResearchAgent
 
-[English](#english) | [中文](#中文)
+[中文](#中文) | [English](#english)
 
----
+## 中文
 
-## English
+DeepResearchAgent 是一个本地优先的多 Agent 研究报告项目。当前功能分支使用运行级协作账本连接 Planner、Searcher、Reader、Writer、Critic、Red 和 Blue：下游 Agent 消费已发布的工件版本，审查问题经过至少两轮 Red/Blue 修订，浏览器通过 SSE 展示初稿、审查过程与最终报告。
 
-DeepResearchAgent is a local-first multi-agent research pipeline that turns open-ended questions into structured Markdown reports with visible planning, evidence extraction, critique, and revision artifacts.
+> 当前边界：本分支升级的是协作、报告和工作台，不包含新的真实数据源。默认确定性来源只用于演示流程，不能作为研究引用；`mock://` 来源会从正式报告和引用校验中移除。没有真实来源时，页面会明确显示“需复查”，不会把模拟内容标成已验证事实。
 
-The workflow coordinates specialized agents for planning, retrieval, reading, drafting, review, and refinement. A browser workbench makes the full report-generation process inspectable, including the initial draft, final report, agent contributions, citations, and validation output.
+### 当前能力
 
-### Highlights
+- 运行级 `ResearchLedger`，记录版本化工件、依赖、消费回执和 Agent 交接。
+- Planner -> Searcher -> Reader -> Writer -> Critic -> Red -> Blue 协作 DAG。
+- Writer 初稿、Red/Blue 审查文本和最终报告的可读 SSE 流。
+- 至少两轮、最多三轮 Red/Blue 审查；问题、依据、建议和修改前后内容可见。
+- 中文优先的完整报告结构：研究背景、关键发现、分析与讨论、研究限制、行动建议、结论、参考来源。
+- 证据充分时选择 5-8 条互不重复的关键发现；证据不足时不会凑数或伪造引用。
+- 引用校验展示 Citation、Evidence、来源标题、原文链接、摘录和字符位置。
+- 后端继续使用结构化对象和 JSON/SSE 协议，普通界面不展示原始 Agent JSON。
+- 无 API Key 的确定性演示模式，以及可选的 OpenAI-compatible LLM 模式。
 
-- Multi-agent research workflow
-- Planner, searcher, reader, writer, critic, red-team, and blue-team roles
-- DAG-style orchestration with checkpoint-friendly execution
-- Structured Markdown report generation
-- Initial-draft and final-report comparison
-- Citation IDs, references, and grounding validation
-- Browser report workbench with step-by-step pipeline visibility
-- Deterministic local mode that runs without API keys
-- Optional OpenAI-compatible LLM configuration
-- Optional external search provider configuration
-- Docker support
+### 快速启动
 
-### Repository Layout
-
-```text
-agents/               Agent role implementations
-compression/          Context compression utilities
-core/                 Dataclass schemas and configuration
-evaluation/           Local evaluation utilities
-examples/             Example research inputs
-memory/               Shared memory and optional vector-memory helpers
-orchestrator/         DAG graph, executor, checkpoints, and pipeline runner
-prompts/              Prompt templates
-search/               Search provider abstractions
-tests/                Unit tests
-tools/                Citation and fetch/search utilities
-main.py               CLI entry point
-report_workbench.py   Browser report workbench
-```
-
-### Getting Started
+要求：Python 3.11 或更高版本。当前版本没有必须安装的第三方 Python 包。
 
 ```powershell
 git clone https://github.com/LoveAmiya/deep-research-agent-workflow.git
 cd deep-research-agent-workflow
+git switch feat/collaboration-ledger
 python -m unittest tests.test_report_workbench
-python report_workbench.py
+.\run_workbench.ps1
 ```
 
-Open the workbench at:
+浏览器打开：<http://127.0.0.1:18181/>
 
-```text
-http://127.0.0.1:18181
+使用其他端口：
+
+```powershell
+$env:DEEP_RESEARCH_WEB_PORT="18183"
+.\run_workbench.ps1
 ```
 
-Enter a research question and run the pipeline from the browser.
+`DEEP_RESEARCH_WEB_PORT` 必须在启动进程前设置；`.env` 主要由模型和命令行配置加载，不负责修改已经启动的监听端口。
 
-### Browser Workbench
+### LLM 配置
 
-The workbench exposes the research process as inspectable artifacts:
+复制配置模板：
 
-- Final report
-- Initial draft
-- Draft-to-final revision diff
-- Per-agent pipeline impact
-- At least two visible Red/Blue review handoffs
-- Findings and citation IDs
-- Citation validation result
-- Readable agent summaries, progress events, and a validated final-report stream
+```powershell
+Copy-Item .env.example .env
+```
 
-The browser workbench does not render raw agent JSON or model output previews.
-The JSON API and SSE stream remain the machine-facing contracts; normal payloads
-contain agent summaries, metrics, review results, and reports rather than raw
-model input/output.
+编辑 `.env`：
 
-API endpoints:
+```dotenv
+DEEP_RESEARCH_USE_LLM=1
+DEEP_RESEARCH_LLM_MODEL=your-model-name
+DEEP_RESEARCH_LLM_API_KEY=your-api-key
+DEEP_RESEARCH_LLM_BASE_URL=https://api.openai.com/v1
+DEEP_RESEARCH_LLM_WIRE_API=chat_completions
+```
+
+工作台收到请求时会加载 `.env`。只有 `enabled`、模型名称和 API Key 均有效时才调用模型；否则进入确定性演示模式。不要提交 `.env`。
+
+### 工作台中会看到什么
+
+1. Agent 实时状态和当前处理动作。
+2. Writer 初始草稿流。
+3. Red/Blue 第一轮、第二轮以及可能的第三轮审查流。
+4. 每轮 Red 问题、证据、建议，以及 Blue 的修改原因和修改前后内容。
+5. Agent 之间交接的工件名称、内容摘要、接收动作和处理状态。
+6. 通过最终校验后发布的完整报告。
+7. 可点击的引用和证据来源详情；没有真实证据时显示明确的降级原因。
+
+SSE 不是把 Agent JSON token 直接输出到黑框。后端发送结构化事件，前端只渲染用户可理解的初稿、审查内容、交接摘要和最终报告。
+
+### API
 
 ```text
 GET  /api/health
@@ -85,58 +83,47 @@ POST /api/research
 POST /api/research/stream
 ```
 
-Example request:
+请求体：
 
 ```json
 {
-  "question": "How should teams evaluate agentic research tools?"
+  "question": "影响企业采用开源 LLM 的主要因素有哪些？"
 }
 ```
 
-### CLI Usage
+`/api/research` 一次返回完整 JSON；`/api/research/stream` 返回有限时长的 SSE 事件流，并在 `run_completed` 后关闭连接。兼容字段包括 `finalReportMarkdown`、`citationValidation` 等；协作字段包括 `ledgerSummary`、`handoffs` 和 `reviewRounds`。
+
+### 数据来源说明
+
+- 浏览器工作台当前默认使用确定性演示来源，没有接入本期排除的真实语料库或稳定搜索服务。
+- 配置 LLM 只会改善规划、写作和审查，不会把模型生成内容变成真实 Evidence。
+- CLI 保留可选网页搜索配置；网页搜索可用性和来源质量不属于本分支的验收范围。
+- 搜索摘要、mock、抓取失败内容和模型自写内容不得进入公开的正式引用。
+- 因此，本分支主要用于展示多 Agent 协作、报告生成、审查闭环和引用边界，而不是宣称已经具备生产级研究数据覆盖。
+
+### CLI
 
 ```powershell
 python main.py
-```
-
-Run with the Red/Blue review loop:
-
-```powershell
 python main.py --red-blue-loop
 ```
 
-### Tests
+CLI 会加载 `.env`，并支持搜索、异步 DAG、checkpoint 和运行存储等实验配置。它与浏览器工作台共享 Agent 和编排代码，但输出形式不同。
 
-Run the workbench test:
+### 测试
 
 ```powershell
+# 工作台与 SSE/协作集成测试
 python -m unittest tests.test_report_workbench
+
+# 完整测试集
+python -m unittest discover -s tests -p "test_*.py"
+
+# 项目脚本
+.\run_tests.ps1
 ```
 
-Run the full test suite:
-
-```powershell
-python -m unittest discover -s tests
-```
-
-### Configuration
-
-Create a local environment file from the template when external providers are needed:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-The default local workflow runs without API keys. Optional LLM mode can be enabled with:
-
-```powershell
-$env:DEEP_RESEARCH_USE_LLM="1"
-$env:DEEP_RESEARCH_LLM_MODEL="your-model-name"
-$env:DEEP_RESEARCH_LLM_API_KEY="your-api-key"
-$env:DEEP_RESEARCH_LLM_BASE_URL="https://api.openai.com/v1"
-```
-
-Keep `.env` out of version control.
+测试通过证明协议、协作、报告结构和降级逻辑符合断言，不等价于外部来源可访问或报告事实已被真实世界验证。
 
 ### Docker
 
@@ -145,178 +132,67 @@ docker build -t deep-research-agent .
 docker run --rm -p 18181:18181 deep-research-agent
 ```
 
-Open:
+Docker 默认运行确定性演示模式。启用模型时使用 `--env-file` 注入配置，不要把密钥写入镜像。
+
+### 架构
 
 ```text
-http://127.0.0.1:18181
+Research question
+  -> Planner publishes research brief
+  -> Searcher consumes brief and publishes candidate sources
+  -> Reader consumes sources and publishes approved findings
+  -> Writer consumes findings and publishes initial report
+  -> Critic publishes structural and evidence review
+  -> Red publishes locatable review issues
+  -> Blue consumes issues and publishes a revised report version
+  -> Red/Blue loop repeats when needed
+  -> Citation validation
+  -> Final report
 ```
 
-### Pipeline Overview
-
-```text
-Question
-  -> PlannerAgent
-  -> SearcherAgent
-  -> ReaderAgent
-  -> WriterAgent
-  -> CriticAgent
-  -> RedAgent
-  -> BlueAgent
-  -> Final Markdown Report
-```
-
----
-
-## 中文
-
-DeepResearchAgent 是一个本地优先的多 Agent 研究工作流，可以把开放式研究问题转换成结构化 Markdown 报告，并展示规划、证据提取、审查和修订过程。
-
-工作流由多个专门 Agent 协作完成，包括规划、检索、阅读、撰写、审查和修订。浏览器工作台会展示报告生成过程中的关键中间产物，包括初稿、最终报告、Agent 贡献、引用信息和校验结果。
-
-### 项目亮点
-
-- 多 Agent 研究工作流
-- 包含 planner、searcher、reader、writer、critic、red-team、blue-team 等角色
-- DAG 风格任务编排，支持 checkpoint 友好的执行方式
-- 结构化 Markdown 报告生成
-- 初稿与最终报告对比
-- Citation ID、References 和引用校验
-- 浏览器报告工作台，可查看每一步产物
-- 默认本地确定性模式，不需要 API Key
-- 可选 OpenAI-compatible LLM 配置
-- 可选外部搜索 provider 配置
-- 支持 Docker 运行
+所有交接均写入单次运行的 `ResearchLedger`。账本不跨研究问题提供长期记忆，也不是语料数据库。
 
 ### 项目结构
 
 ```text
-agents/               Agent 角色实现
-compression/          上下文压缩工具
-core/                 Dataclass 数据结构和配置
-evaluation/           本地评测工具
-examples/             示例研究输入
-memory/               共享记忆和可选向量记忆工具
-orchestrator/         DAG、执行器、checkpoint 和 pipeline runner
-prompts/              Prompt 模板
-search/               搜索 provider 抽象
-tests/                单元测试
-tools/                Citation 和 fetch/search 工具
-main.py               命令行入口
-report_workbench.py   浏览器报告工作台
+agents/               Agent 角色、Critic 和 Red/Blue 循环
+core/                 配置、Schema 和 LLM 客户端
+memory/               SharedMemory、ResearchLedger 和持久化工具
+orchestrator/         DAG、执行器、checkpoint 和协作 pipeline
+prompts/              Agent 提示词
+search/               可选搜索 provider 抽象
+tests/                单元与集成测试
+tools/                引用、抓取和搜索工具
+main.py               CLI 入口
+report_workbench.py   浏览器工作台与 API/SSE 服务
 ```
 
-### 快速开始
+架构决策见 [`docs/decisions/001-run-scoped-collaboration-ledger.md`](docs/decisions/001-run-scoped-collaboration-ledger.md)。
+
+## English
+
+DeepResearchAgent is a local-first multi-agent research report project. On the `feat/collaboration-ledger` branch, agents exchange versioned artifacts through a run-scoped `ResearchLedger`, Red/Blue review runs for at least two visible rounds, and the browser streams the Writer draft, review transcript, and validated final report through readable SSE events.
+
+This branch improves collaboration and report UX; it does not add a production-grade evidence source. Deterministic `mock://` sources are demo-only and are removed from public references and successful citation validation.
+
+### Start
 
 ```powershell
 git clone https://github.com/LoveAmiya/deep-research-agent-workflow.git
 cd deep-research-agent-workflow
-python -m unittest tests.test_report_workbench
-python report_workbench.py
+git switch feat/collaboration-ledger
+.\run_tests.ps1
+.\run_workbench.ps1
 ```
 
-浏览器打开：
+Open <http://127.0.0.1:18181/>. Set `DEEP_RESEARCH_WEB_PORT` in the process environment before startup to use another port.
 
-```text
-http://127.0.0.1:18181
-```
-
-输入研究问题后，可以直接在页面中运行完整 pipeline。
-
-### 浏览器工作台
-
-工作台会把研究流程拆成可查看的中间产物：
-
-- 最终报告
-- 初始草稿
-- 初稿到最终稿的修订 diff
-- 每个 Agent 对 pipeline 的贡献
-- Findings 和 Citation ID
-- 引用校验结果
-- 便于调试和集成的 API 响应
-
-接口：
+### Main contracts
 
 ```text
 GET  /api/health
 POST /api/research
+POST /api/research/stream
 ```
 
-请求示例：
-
-```json
-{
-  "question": "How should teams evaluate agentic research tools?"
-}
-```
-
-### 命令行使用
-
-```powershell
-python main.py
-```
-
-启用 Red/Blue 审查修订链路：
-
-```powershell
-python main.py --red-blue-loop
-```
-
-### 测试
-
-运行工作台测试：
-
-```powershell
-python -m unittest tests.test_report_workbench
-```
-
-运行完整测试：
-
-```powershell
-python -m unittest discover -s tests
-```
-
-### 配置
-
-如需接入外部 provider，可以从模板创建本地环境变量文件：
-
-```powershell
-Copy-Item .env.example .env
-```
-
-默认本地工作流不需要 API Key。可选 LLM 模式可以通过以下环境变量启用：
-
-```powershell
-$env:DEEP_RESEARCH_USE_LLM="1"
-$env:DEEP_RESEARCH_LLM_MODEL="your-model-name"
-$env:DEEP_RESEARCH_LLM_API_KEY="your-api-key"
-$env:DEEP_RESEARCH_LLM_BASE_URL="https://api.openai.com/v1"
-```
-
-不要把 `.env` 提交到版本库。
-
-### Docker
-
-```powershell
-docker build -t deep-research-agent .
-docker run --rm -p 18181:18181 deep-research-agent
-```
-
-浏览器打开：
-
-```text
-http://127.0.0.1:18181
-```
-
-### Pipeline 概览
-
-```text
-Question
-  -> PlannerAgent
-  -> SearcherAgent
-  -> ReaderAgent
-  -> WriterAgent
-  -> CriticAgent
-  -> RedAgent
-  -> BlueAgent
-  -> Final Markdown Report
-```
+The backend keeps structured JSON and SSE contracts. The normal UI renders readable agent status, handoffs, reports, review details, and citation evidence instead of raw model JSON.
