@@ -203,9 +203,19 @@ class WriterAgent(BaseAgent):
         if findings and any(not any(marker in bullet for marker in allowed_markers) for bullet in bullets):
             diagnostics["validation_error"] = "uncited_key_finding_bullet"
             return None
+        section_order = [
+            "Background",
+            "Key Findings",
+            "Analysis and Discussion",
+            "Limitations",
+            "Recommendations",
+            "Conclusion",
+            "References",
+        ]
         sections = [
             {"title": section, "content": cls._extract_section(markdown, section).strip()}
-            for section in required_sections
+            for section in section_order
+            if f"## {section}" in markdown
         ]
         return markdown.strip(), sections
 
