@@ -86,8 +86,19 @@ class RedBlueLoopRunner:
         stop_reason = "max_rounds_reached"
         passed = False
         latest_decision = None
+        event_sink = context.metadata.get("event_sink")
+        round_offset = int(context.metadata.get("round_offset", 0) or 0)
+        max_display_rounds = int(
+            context.metadata.get("max_display_rounds", self.config.max_rounds + round_offset)
+        )
 
         for round_index in range(1, max(1, self.config.max_rounds) + 1):
+            display_round = round_index + round_offset
+            self._emit_event(
+                event_sink,
+                "review_round_started",
+                {"round": display_round, "maxRounds": max_display_rounds},
+            )
             red_result = self.red_agent.run(
                 AgentContext(
                     task_id=f"{context.task_id}_red_round_{round_index}",
@@ -118,8 +129,34 @@ class RedBlueLoopRunner:
 
             red_review = red_result.output
             issue_count_before = len(red_review.issues)
+            self._emit_review_stream(
+                event_sink,
+                "Red 审查",
+                [
+                    red_review.summary,
+                    *[
+                        f"- {issue.issue_id} [{issue.severity}] {issue.message}\n"
+                        f"  依据：{issue.evidence or '未提供'}\n"
+                        f"  建议：{issue.suggestion or '未提供'}"
+                        for issue in red_review.issues
+                    ],
+                ],
+            )
 
             if red_review.passed and self.config.stop_on_pass:
+                self._emit_review_stream(
+                    event_sink,
+                    "Blue 复核",
+                    ["Red 本轮未提出新的阻断问题，Blue 保留当前报告版本，不新增事实或引用。"],
+                )
+                self._emit_event(
+                    event_sink,
+                    "review_round_completed",
+                    {
+                        "round": display_round,
+                        "review": self._live_review_payload(display_round, red_review, None),
+                    },
+                )
                 passed = True
                 stop_reason = "red_passed"
                 snapshot = build_round_snapshot(
@@ -195,6 +232,23 @@ class RedBlueLoopRunner:
                 break
 
             blue_revision = blue_result.output
+            self._emit_review_stream(
+                event_sink,
+                "Blue 修订",
+                [
+                    *blue_revision.revision_notes,
+                    *[f"已修复：{issue_id}" for issue_id in blue_revision.fixed_issue_ids],
+                    *[f"仍待复核：{issue_id}" for issue_id in blue_revision.remaining_issue_ids],
+                ] or ["本轮未产生正文修改。"],
+            )
+            self._emit_event(
+                event_sink,
+                "review_round_completed",
+                {
+                    "round": display_round,
+                    "review": self._live_review_payload(display_round, red_review, blue_revision),
+                },
+            )
             current_report = blue_revision.revised_report
             total_fixed_issue_ids.update(blue_revision.fixed_issue_ids)
             issue_count_after = len(blue_revision.remaining_issue_ids)
@@ -270,6 +324,54 @@ class RedBlueLoopRunner:
         )
         self._write_memory(context, loop_result)
         return loop_result
+
+    @staticmethod
+    def _emit_event(event_sink, event_type: str, data: dict) -> None:
+        if event_sink is not None:
+            event_sink(event_type, data)
+
+    @classmethod
+    def _emit_review_stream(cls, event_sink, title: str, lines: List[str]) -> None:
+        if event_sink is None:
+            return
+        text = "\n".join([f"{title}：", *[line for line in lines if line]]).strip()
+        cls._emit_event(event_sink, "report_stream_start", {"target": "reviewTranscript"})
+        for index in range(0, len(text), 80):
+            cls._emit_event(
+                event_sink,
+                "report_delta",
+                {"target": "reviewTranscript", "delta": text[index : index + 80]},
+            )
+        cls._emit_event(
+            event_sink,
+            "report_stream_done",
+            {"target": "reviewTranscript", "text": text},
+        )
+
+    @staticmethod
+    def _live_review_payload(round_index, red_review, blue_revision) -> dict:
+        return {
+            "round": round_index,
+            "redSummary": red_review.summary,
+            "redIssues": [
+                {
+                    "issueId": issue.issue_id,
+                    "severity": issue.severity,
+                    "message": issue.message,
+                    "evidence": issue.evidence or "",
+                    "suggestion": issue.suggestion or "",
+                }
+                for issue in red_review.issues
+            ],
+            "blueRevision": {
+                "fixedIssueIds": list(getattr(blue_revision, "fixed_issue_ids", []) or []),
+                "remainingIssueIds": list(getattr(blue_revision, "remaining_issue_ids", []) or []),
+                "revisionNotes": list(getattr(blue_revision, "revision_notes", []) or [])
+                or (["本轮复核通过，无需修改正文。"] if blue_revision is None else []),
+                "changes": [],
+            },
+            "status": "PASSED" if red_review.passed else "REVISED",
+        }
 
     @staticmethod
     def _remaining_issue_count(rounds: List[RedBlueRoundResult]) -> int:

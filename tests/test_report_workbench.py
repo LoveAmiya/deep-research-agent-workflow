@@ -346,6 +346,12 @@ class TestReportWorkbench(unittest.TestCase):
         self.assertEqual(len(payload["reviewRounds"]), 2)
         self.assertEqual([item["round"] for item in payload["reviewRounds"]], [1, 2])
         self.assertIn("review_round_started", [event_type for event_type, _ in events])
+        review_streams = [
+            data
+            for event_type, data in events
+            if event_type == "report_stream_start" and data.get("target") == "reviewTranscript"
+        ]
+        self.assertGreaterEqual(len(review_streams), 4)
 
     def test_default_workbench_uses_collaborative_dag_and_emits_readable_handoffs(self) -> None:
         events = []

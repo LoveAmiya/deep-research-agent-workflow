@@ -555,7 +555,15 @@ def build_research_pipeline_result(
             AgentContext(
                 task_id="red_blue_loop",
                 inputs={"citation_registry": citation_registry},
-                metadata={"agent_name": "RedBlueLoopRunner"},
+                metadata={
+                    "agent_name": "RedBlueLoopRunner",
+                    "event_sink": event_sink,
+                    "round_offset": 1,
+                    "max_display_rounds": 1 + max(
+                        1,
+                        getattr(red_blue_loop_config, "max_rounds", 1),
+                    ),
+                },
                 memory=memory,
                 llm_client=llm_client,
             ),
