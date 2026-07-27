@@ -1,5 +1,6 @@
 import json
 import re
+import threading
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -34,6 +35,9 @@ class BaseLLMClient:
 
     def generate_stream(self, messages: List[LLMMessage], temperature: float = 0.2) -> Iterator[str]:
         raise LLMClientError("This LLM client does not support streaming.")
+
+    def cancel_active_requests(self) -> None:
+        """Best-effort interruption hook used by local request timeouts."""
 
 
 class MockLLMClient(BaseLLMClient):
@@ -82,13 +86,48 @@ class OpenAICompatibleLLMClient(BaseLLMClient):
 
     def __init__(self, config: LLMConfig) -> None:
         self.config = config
+        self._active_response_lock = threading.Lock()
+        self._active_responses: dict[int, object] = {}
+        self._request_failure: str | None = None
+
+    def cancel_active_requests(self) -> None:
+        with self._active_response_lock:
+            responses = list(self._active_responses.values())
+        for response in responses:
+            close = getattr(response, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except OSError:
+                    pass
+
+    def _register_response(self, response: object) -> None:
+        with self._active_response_lock:
+            self._active_responses[id(response)] = response
+
+    def _unregister_response(self, response: object) -> None:
+        with self._active_response_lock:
+            self._active_responses.pop(id(response), None)
+
+    def _ensure_request_available(self) -> None:
+        with self._active_response_lock:
+            unavailable = self._request_failure is not None
+        if unavailable:
+            raise LLMClientError("LLM request skipped after an earlier request failure.")
+
+    def _record_request_failure(self, error: Exception) -> None:
+        with self._active_response_lock:
+            if self._request_failure is None:
+                self._request_failure = str(error)
 
     def generate(self, messages: List[LLMMessage], temperature: float = 0.2) -> LLMResponse:
+        self._ensure_request_available()
         if self.config.wire_api == "responses":
             return self._generate_responses(messages, temperature=temperature)
         return self._generate_chat_completions(messages, temperature=temperature)
 
     def generate_stream(self, messages: List[LLMMessage], temperature: float = 0.2) -> Iterator[str]:
+        self._ensure_request_available()
         if self.config.wire_api == "responses":
             payload = {
                 "model": self.config.model,
@@ -185,14 +224,21 @@ class OpenAICompatibleLLMClient(BaseLLMClient):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.config.timeout_seconds) as response:
-                return json.loads(response.read().decode("utf-8"))
+            response = urllib.request.urlopen(request, timeout=self.config.timeout_seconds)
+            self._register_response(response)
+            try:
+                with response:
+                    return json.loads(response.read().decode("utf-8"))
+            finally:
+                self._unregister_response(response)
         except urllib.error.HTTPError as exc:
+            self._record_request_failure(exc)
             response_body = self._read_error_body(exc)
             raise LLMClientError(
                 f"LLM request failed: HTTP {exc.code} {exc.reason}; response: {response_body}"
             ) from exc
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+            self._record_request_failure(exc)
             raise LLMClientError(f"LLM request failed: {exc}") from exc
 
     def _post_sse(self, url: str, payload: dict) -> Iterator[str]:
@@ -209,23 +255,38 @@ class OpenAICompatibleLLMClient(BaseLLMClient):
         )
         data_lines: list[str] = []
         try:
-            with urllib.request.urlopen(request, timeout=self.config.timeout_seconds) as response:
-                for raw_line in response:
-                    line = raw_line.decode("utf-8", errors="replace").rstrip()
-                    if line.startswith("data:"):
-                        data_lines.append(line[5:].lstrip())
-                        continue
-                    if line:
-                        continue
+            response = urllib.request.urlopen(request, timeout=self.config.timeout_seconds)
+            self._register_response(response)
+            try:
+                with response:
+                    for raw_line in response:
+                        line = raw_line.decode("utf-8", errors="replace").rstrip()
+                        if line.startswith("data:"):
+                            data_lines.append(line[5:].lstrip())
+                            continue
+                        if line:
+                            continue
+                        terminal = self._sse_terminal_state(data_lines)
+                        yield from self._sse_data_deltas(data_lines)
+                        data_lines = []
+                        if terminal == "completed":
+                            return
+                        if terminal == "failed":
+                            raise LLMClientError("LLM streaming response ended before completion.")
+                    terminal = self._sse_terminal_state(data_lines)
                     yield from self._sse_data_deltas(data_lines)
-                    data_lines = []
-                yield from self._sse_data_deltas(data_lines)
+                    if terminal == "failed":
+                        raise LLMClientError("LLM streaming response ended before completion.")
+            finally:
+                self._unregister_response(response)
         except urllib.error.HTTPError as exc:
+            self._record_request_failure(exc)
             response_body = self._read_error_body(exc)
             raise LLMClientError(
                 f"LLM streaming request failed: HTTP {exc.code} {exc.reason}; response: {response_body}"
             ) from exc
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+            self._record_request_failure(exc)
             raise LLMClientError(f"LLM streaming request failed: {exc}") from exc
 
     @staticmethod
@@ -251,6 +312,24 @@ class OpenAICompatibleLLMClient(BaseLLMClient):
             delta = event.get("delta")
             if isinstance(delta, str) and delta:
                 yield delta
+
+    @staticmethod
+    def _sse_terminal_state(data_lines: list[str]) -> str | None:
+        if not data_lines:
+            return None
+        payload_text = "\n".join(data_lines).strip()
+        if payload_text == "[DONE]":
+            return "completed"
+        try:
+            event = json.loads(payload_text)
+        except json.JSONDecodeError:
+            return None
+        event_type = event.get("type") if isinstance(event, dict) else None
+        if event_type == "response.completed":
+            return "completed"
+        if event_type in {"response.failed", "response.incomplete", "error"}:
+            return "failed"
+        return None
 
     @staticmethod
     def _read_error_body(exc: urllib.error.HTTPError) -> str:

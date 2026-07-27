@@ -58,6 +58,15 @@ class FakeStreamingHTTPResponse:
         return iter(self.lines)
 
 
+class DoneThenExplodesStreamingHTTPResponse(FakeStreamingHTTPResponse):
+    def __iter__(self):
+        yield b'data: {"choices":[{"delta":{"content":"done"}}]}\n'
+        yield b"\n"
+        yield b"data: [DONE]\n"
+        yield b"\n"
+        raise AssertionError("the client read past the SSE completion marker")
+
+
 class TestLLMClient(unittest.TestCase):
     def test_mock_llm_client_returns_response(self) -> None:
         client = MockLLMClient()
@@ -107,7 +116,7 @@ class TestLLMClient(unittest.TestCase):
             enabled=True,
             model="gpt-5.5",
             api_key="test-key",
-            base_url="https://crs.ruinique.com",
+            base_url="https://llm.example.test",
             wire_api="responses",
             reasoning_effort="xhigh",
             disable_response_storage=True,
@@ -139,7 +148,7 @@ class TestLLMClient(unittest.TestCase):
                 ]
             )
 
-        self.assertEqual(captured["url"], "https://crs.ruinique.com/responses")
+        self.assertEqual(captured["url"], "https://llm.example.test/responses")
         self.assertEqual(captured["body"]["model"], "gpt-5.5")
         self.assertEqual(captured["body"]["instructions"], "系统指令")
         self.assertEqual(captured["body"]["input"], "USER:\n你好")
@@ -185,6 +194,49 @@ class TestLLMClient(unittest.TestCase):
         self.assertEqual(captured["body"]["model"], "gpt-test")
         self.assertEqual(captured["accept"], "text/event-stream")
 
+    def test_stream_stops_at_done_marker_even_when_provider_keeps_connection_open(self) -> None:
+        config = LLMConfig(
+            enabled=True,
+            model="gpt-test",
+            api_key="test-key",
+            base_url="https://example.test/v1",
+        )
+        client = OpenAICompatibleLLMClient(config)
+
+        with patch(
+            "urllib.request.urlopen",
+            return_value=DoneThenExplodesStreamingHTTPResponse([]),
+        ):
+            chunks = list(client.generate_stream([LLMMessage(role="user", content="hello")]))
+
+        self.assertEqual(chunks, ["done"])
+
+    def test_responses_stream_stops_at_completed_event(self) -> None:
+        config = LLMConfig(
+            enabled=True,
+            model="gpt-test",
+            api_key="test-key",
+            base_url="https://example.test/v1",
+            wire_api="responses",
+        )
+        lines = [
+            b'data: {"type":"response.output_text.delta","delta":"done"}\n',
+            b"\n",
+            b'data: {"type":"response.completed","response":{"status":"completed"}}\n',
+            b"\n",
+        ]
+        client = OpenAICompatibleLLMClient(config)
+
+        class CompletedThenExplodes(FakeStreamingHTTPResponse):
+            def __iter__(self):
+                yield from self.lines
+                raise AssertionError("the client read past response.completed")
+
+        with patch("urllib.request.urlopen", return_value=CompletedThenExplodes(lines)):
+            chunks = list(client.generate_stream([LLMMessage(role="user", content="hello")]))
+
+        self.assertEqual(chunks, ["done"])
+
     def test_responses_api_streams_output_text_deltas(self) -> None:
         config = LLMConfig(
             enabled=True,
@@ -209,7 +261,7 @@ class TestLLMClient(unittest.TestCase):
             enabled=True,
             model="gpt-5.5",
             api_key="sk-test-secret-key",
-            base_url="https://crs.ruinique.com",
+            base_url="https://llm.example.test",
             wire_api="responses",
         )
         body = b'{"error":{"message":"bad key sk-test-secret-key","type":"invalid_request_error"}}'
@@ -233,6 +285,23 @@ class TestLLMClient(unittest.TestCase):
         self.assertIn("invalid_request_error", message)
         self.assertIn("[redacted-api-key]", message)
         self.assertNotIn("sk-test-secret-key", message)
+
+    def test_client_stops_repeating_requests_after_a_transport_timeout(self) -> None:
+        config = LLMConfig(
+            enabled=True,
+            model="gpt-test",
+            api_key="test-key",
+            base_url="https://example.test/v1",
+        )
+        client = OpenAICompatibleLLMClient(config)
+
+        with patch("urllib.request.urlopen", side_effect=TimeoutError("read timed out")) as urlopen:
+            with self.assertRaises(LLMClientError):
+                client.generate([LLMMessage(role="user", content="first")])
+            with self.assertRaisesRegex(LLMClientError, "earlier request failure"):
+                client.generate([LLMMessage(role="user", content="second")])
+
+        self.assertEqual(urlopen.call_count, 1)
 
     def test_prompt_loader_can_load_planner_prompt(self) -> None:
         prompt = load_prompt("planner")

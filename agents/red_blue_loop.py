@@ -99,6 +99,17 @@ class RedBlueLoopRunner:
                 "review_round_started",
                 {"round": display_round, "maxRounds": max_display_rounds},
             )
+            self._emit_event(
+                event_sink,
+                "review_agent_started",
+                {
+                    "round": display_round,
+                    "maxRounds": max_display_rounds,
+                    "agent": "RedAgent",
+                    "phase": "review",
+                    "modelBacked": context.llm_client is not None,
+                },
+            )
             red_result = self.red_agent.run(
                 AgentContext(
                     task_id=f"{context.task_id}_red_round_{round_index}",
@@ -112,6 +123,16 @@ class RedBlueLoopRunner:
                     memory=context.memory,
                     llm_client=context.llm_client,
                 )
+            )
+            self._emit_event(
+                event_sink,
+                "review_agent_completed",
+                {
+                    "round": display_round,
+                    "maxRounds": max_display_rounds,
+                    "agent": "RedAgent",
+                    "success": red_result.success,
+                },
             )
             if not red_result.success:
                 stop_reason = "red_agent_failed"
@@ -188,6 +209,17 @@ class RedBlueLoopRunner:
                 )
                 break
 
+            self._emit_event(
+                event_sink,
+                "review_agent_started",
+                {
+                    "round": display_round,
+                    "maxRounds": max_display_rounds,
+                    "agent": "BlueAgent",
+                    "phase": "revision",
+                    "modelBacked": context.llm_client is not None,
+                },
+            )
             blue_result = self.blue_agent.run(
                 AgentContext(
                     task_id=f"{context.task_id}_blue_round_{round_index}",
@@ -201,6 +233,16 @@ class RedBlueLoopRunner:
                     memory=context.memory,
                     llm_client=context.llm_client,
                 )
+            )
+            self._emit_event(
+                event_sink,
+                "review_agent_completed",
+                {
+                    "round": display_round,
+                    "maxRounds": max_display_rounds,
+                    "agent": "BlueAgent",
+                    "success": blue_result.success,
+                },
             )
             if not blue_result.success:
                 stop_reason = "blue_agent_failed"

@@ -19,6 +19,13 @@ DeepResearchAgent 是一个本地优先的多 Agent 研究报告项目。当前�
 - 引用校验展示 Citation、Evidence、来源标题、原文链接、摘录和字符位置。
 - 后端继续使用结构化对象和 JSON/SSE 协议，普通界面不展示原始 Agent JSON。
 - 无 API Key 的确定性演示模式，以及可选的 OpenAI-compatible LLM 模式。
+- 模型流在收到 `[DONE]` 或 `response.completed` 后立即结束，避免报告已经生成但 Agent 仍显示运行中。
+- 单次任务发生模型传输超时后停止重复调用；Critic、Red、Blue 会用本地规则完成并显示明确的降级状态。
+- 对外错误只返回稳定的安全提示，内部异常、密钥和本机路径不会出现在浏览器响应中。
+
+### 当前本机演示验收
+
+截至 2026-07-28，完整测试集为 `319/319` 通过。针对“Critic 超时后 Blue 长时间运行”的回归测试会验证：任务仍能结束、后续节点显示“已用本地规则完成”、公开 Payload 不含原始超时异常，并且同一工件交接不会重复展示。
 
 ### 快速启动
 
@@ -29,7 +36,7 @@ git clone https://github.com/LoveAmiya/deep-research-agent-workflow.git
 cd deep-research-agent-workflow
 git switch feat/collaboration-ledger
 python -m unittest tests.test_report_workbench
-.\run_workbench.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run_workbench.ps1
 ```
 
 浏览器打开：<http://127.0.0.1:18181/>
@@ -38,10 +45,12 @@ python -m unittest tests.test_report_workbench
 
 ```powershell
 $env:DEEP_RESEARCH_WEB_PORT="18183"
-.\run_workbench.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run_workbench.ps1
 ```
 
 `DEEP_RESEARCH_WEB_PORT` 必须在启动进程前设置；`.env` 主要由模型和命令行配置加载，不负责修改已经启动的监听端口。
+
+服务默认只监听 `127.0.0.1`，每个问题最多 4,000 字符、请求体最多 16 KiB，默认最多同时运行 2 个研究任务且单任务等待上限为 300 秒。非回环监听必须同时设置 `DEEP_RESEARCH_ACCESS_TOKEN`，页面中的令牌只保存在当前内存，不写入浏览器存储。
 
 ### LLM 配置
 
@@ -55,8 +64,8 @@ Copy-Item .env.example .env
 
 ```dotenv
 DEEP_RESEARCH_USE_LLM=1
-DEEP_RESEARCH_LLM_MODEL=your-model-name
-DEEP_RESEARCH_LLM_API_KEY=your-api-key
+DEEP_RESEARCH_LLM_MODEL=<your-model-name>
+DEEP_RESEARCH_LLM_API_KEY=<your-api-key>
 DEEP_RESEARCH_LLM_BASE_URL=https://api.openai.com/v1
 DEEP_RESEARCH_LLM_WIRE_API=chat_completions
 ```
@@ -79,8 +88,10 @@ SSE 不是把 Agent JSON token 直接输出到黑框。后端发送结构化事�
 
 ```text
 GET  /api/health
+GET  /api/research/status
 POST /api/research
 POST /api/research/stream
+POST /api/research/cancel
 ```
 
 请求体：
@@ -92,6 +103,8 @@ POST /api/research/stream
 ```
 
 `/api/research` 一次返回完整 JSON；`/api/research/stream` 返回有限时长的 SSE 事件流，并在 `run_completed` 后关闭连接。兼容字段包括 `finalReportMarkdown`、`citationValidation` 等；协作字段包括 `ledgerSummary`、`handoffs` 和 `reviewRounds`。
+
+失败响应统一为 `{"error":{"code":"...","message":"..."}}`。流式响应通过 `X-Research-Request-Id` 返回任务 ID，取消接口接收 `{"requestId":"..."}`。
 
 ### 数据来源说明
 
@@ -120,7 +133,7 @@ python -m unittest tests.test_report_workbench
 python -m unittest discover -s tests -p "test_*.py"
 
 # 项目脚本
-.\run_tests.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run_tests.ps1
 ```
 
 测试通过证明协议、协作、报告结构和降级逻辑符合断言，不等价于外部来源可访问或报告事实已被真实世界验证。
@@ -129,10 +142,10 @@ python -m unittest discover -s tests -p "test_*.py"
 
 ```powershell
 docker build -t deep-research-agent .
-docker run --rm -p 18181:18181 deep-research-agent
+docker run --rm -p 127.0.0.1:18181:18181 -e DEEP_RESEARCH_ACCESS_TOKEN=choose-a-local-token deep-research-agent
 ```
 
-Docker 默认运行确定性演示模式。启用模型时使用 `--env-file` 注入配置，不要把密钥写入镜像。
+容器内部监听 `0.0.0.0`，因此必须提供访问令牌；宿主端口只映射到 `127.0.0.1`。Docker 默认运行确定性演示模式。启用模型时使用 `--env-file` 注入配置，不要把密钥写入镜像。
 
 ### 架构
 
@@ -181,8 +194,8 @@ This branch improves collaboration and report UX; it does not add a production-g
 git clone https://github.com/LoveAmiya/deep-research-agent-workflow.git
 cd deep-research-agent-workflow
 git switch feat/collaboration-ledger
-.\run_tests.ps1
-.\run_workbench.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run_tests.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run_workbench.ps1
 ```
 
 Open <http://127.0.0.1:18181/>. Set `DEEP_RESEARCH_WEB_PORT` in the process environment before startup to use another port.

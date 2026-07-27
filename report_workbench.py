@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, is_dataclass
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from dataclasses import asdict, dataclass, is_dataclass
 from difflib import unified_diff
+import hmac
+import ipaddress
 import json
+import logging
 import os
 import re
+import threading
+import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
@@ -23,6 +30,188 @@ from orchestrator.research_pipeline import run_research_pipeline
 DEFAULT_QUESTION = "What are the main factors that affect open-source LLM adoption in enterprises?"
 
 TASK_ORDER = [(task.task_id, task.agent, task.title) for task in MODEL_TASKS]
+
+MAX_REQUEST_BYTES = 16 * 1024
+MAX_QUESTION_CHARS = 4_000
+DEFAULT_MAX_CONCURRENT_RUNS = 2
+DEFAULT_TASK_TIMEOUT_SECONDS = 300.0
+LOGGER = logging.getLogger(__name__)
+
+
+class APIError(Exception):
+    def __init__(self, status: int, code: str, message: str):
+        super().__init__(message)
+        self.status = status
+        self.code = code
+        self.message = message
+
+
+class ResearchCancelled(RuntimeError):
+    pass
+
+
+@dataclass
+class ManagedResearchRun:
+    request_id: str
+    cancel_event: threading.Event
+    future: Any
+    context: "ResearchRunContext"
+
+
+class ResearchRunContext:
+    def __init__(self, request_id: str, cancel_event: threading.Event):
+        self.request_id = request_id
+        self._cancel_event = cancel_event
+        self._callback_lock = threading.Lock()
+        self._cancel_callbacks: list[Any] = []
+
+    def check_cancelled(self) -> None:
+        if self._cancel_event.is_set():
+            raise ResearchCancelled("Research request was cancelled")
+
+    def cancel(self) -> None:
+        with self._callback_lock:
+            already_cancelled = self._cancel_event.is_set()
+            self._cancel_event.set()
+            callbacks = [] if already_cancelled else list(self._cancel_callbacks)
+            self._cancel_callbacks.clear()
+        for callback in callbacks:
+            try:
+                callback()
+            except Exception:
+                LOGGER.exception("Cancellation callback failed for research request %s", self.request_id)
+
+    def add_cancel_callback(self, callback) -> None:
+        with self._callback_lock:
+            if self._cancel_event.is_set():
+                invoke_now = True
+            else:
+                self._cancel_callbacks.append(callback)
+                invoke_now = False
+        if invoke_now:
+            callback()
+
+
+class ResearchRequestManager:
+    def __init__(
+        self,
+        max_concurrent_runs: int = DEFAULT_MAX_CONCURRENT_RUNS,
+        timeout_seconds: float = DEFAULT_TASK_TIMEOUT_SECONDS,
+    ) -> None:
+        if max_concurrent_runs < 1:
+            raise ValueError("max_concurrent_runs must be positive")
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        self.max_concurrent_runs = max_concurrent_runs
+        self.timeout_seconds = timeout_seconds
+        self._slots = threading.BoundedSemaphore(max_concurrent_runs)
+        self._executor = ThreadPoolExecutor(max_workers=max_concurrent_runs, thread_name_prefix="research-run")
+        self._lock = threading.Lock()
+        self._runs: dict[str, dict[str, Any]] = {}
+
+    def submit(self, operation) -> ManagedResearchRun:
+        if not self._slots.acquire(blocking=False):
+            raise APIError(429, "SERVER_BUSY", "All local research slots are currently in use.")
+        request_id = uuid.uuid4().hex
+        cancel_event = threading.Event()
+        context = ResearchRunContext(request_id, cancel_event)
+        now = time.time()
+        with self._lock:
+            self._runs[request_id] = {
+                "requestId": request_id,
+                "status": "queued",
+                "createdAt": now,
+                "startedAt": None,
+                "finishedAt": None,
+                "errorCode": None,
+                "cancelEvent": cancel_event,
+                "context": context,
+            }
+
+        def execute():
+            self._update(request_id, status="running", startedAt=time.time())
+            try:
+                context.check_cancelled()
+                result = operation(context)
+                context.check_cancelled()
+            except ResearchCancelled:
+                with self._lock:
+                    current = self._runs[request_id]["status"]
+                if current != "timed_out":
+                    self._update(request_id, status="cancelled", errorCode="RESEARCH_CANCELLED")
+                raise
+            except Exception as exc:
+                if cancel_event.is_set():
+                    with self._lock:
+                        current = self._runs[request_id]["status"]
+                    if current != "timed_out":
+                        self._update(request_id, status="cancelled", errorCode="RESEARCH_CANCELLED")
+                    raise ResearchCancelled("Research request was cancelled") from exc
+                self._update(request_id, status="failed", errorCode="RESEARCH_FAILED")
+                LOGGER.exception("Research request %s failed", request_id)
+                raise
+            else:
+                self._update(request_id, status="completed")
+                return result
+            finally:
+                self._update(request_id, finishedAt=time.time())
+                self._slots.release()
+
+        try:
+            future = self._executor.submit(execute)
+        except Exception:
+            self._slots.release()
+            raise
+        return ManagedResearchRun(request_id, cancel_event, future, context)
+
+    def wait(self, run: ManagedResearchRun):
+        try:
+            return run.future.result(timeout=self.timeout_seconds)
+        except FutureTimeoutError as exc:
+            self._update(run.request_id, status="timed_out", errorCode="RESEARCH_TIMEOUT")
+            run.context.cancel()
+            raise APIError(504, "RESEARCH_TIMEOUT", "The research task exceeded its local time limit.") from exc
+        except ResearchCancelled as exc:
+            raise APIError(409, "RESEARCH_CANCELLED", "The research task was cancelled.") from exc
+
+    def cancel(self, request_id: str) -> bool:
+        with self._lock:
+            run = self._runs.get(request_id)
+            if run is None or run["status"] not in {"queued", "running"}:
+                return False
+            run["status"] = "cancelling"
+        return self._set_cancel_event(request_id)
+
+    def _set_cancel_event(self, request_id: str) -> bool:
+        with self._lock:
+            context = self._runs[request_id].get("context")
+        if context is None:
+            return False
+        context.cancel()
+        return True
+
+    def _update(self, request_id: str, **values: Any) -> None:
+        with self._lock:
+            record = self._runs.get(request_id)
+            if record is not None:
+                record.update(values)
+
+    def status(self) -> dict[str, Any]:
+        with self._lock:
+            public_runs = [
+                {key: value for key, value in run.items() if key not in {"cancelEvent", "context"}}
+                for run in self._runs.values()
+            ][-50:]
+        active = sum(run["status"] in {"queued", "running", "cancelling", "timed_out"} and run["finishedAt"] is None for run in public_runs)
+        return {
+            "activeRuns": active,
+            "maxConcurrentRuns": self.max_concurrent_runs,
+            "taskTimeoutSeconds": self.timeout_seconds,
+            "runs": public_runs,
+        }
+
+    def shutdown(self) -> None:
+        self._executor.shutdown(wait=False, cancel_futures=True)
 
 
 def build_report_workbench_payload(
@@ -41,6 +230,7 @@ def build_report_workbench_payload(
     """
 
     question = (question_text or DEFAULT_QUESTION).strip() or DEFAULT_QUESTION
+    cancellation_context = pipeline_kwargs.pop("cancellation_context", None)
     if model_workbench:
         return build_model_workbench_payload(
             question,
@@ -58,8 +248,8 @@ def build_report_workbench_payload(
             llm_client = create_llm_client(llm_config)
             pipeline_kwargs["llm_client"] = llm_client
             collaborative_mode = "collaborative_dag_llm"
-    if llm_client is not None:
-        pipeline_kwargs["require_llm"] = True
+    if llm_client is not None and cancellation_context is not None:
+        cancellation_context.add_cancel_callback(llm_client.cancel_active_requests)
     if event_sink is not None:
         event_sink(
             "run_started",
@@ -73,6 +263,9 @@ def build_report_workbench_payload(
             },
         )
     pipeline_kwargs.setdefault("use_red_blue_loop", True)
+    # The visible DAG already performs one model-backed Red/Blue pass. The follow-up
+    # round is a local verification pass so it cannot silently consume a second long call.
+    pipeline_kwargs.setdefault("red_blue_loop_use_llm", False)
     pipeline_kwargs.setdefault(
         "red_blue_loop_config",
         RedBlueLoopConfig(max_rounds=max(1, review_rounds - 1)),
@@ -133,9 +326,7 @@ def summarize_pipeline_result(result: dict) -> dict:
     degradation_reasons = []
     if fallback_count:
         degradation_reasons.extend(
-            f"{value.agent_name}: {value.metadata.get('llm_error') or value.metadata.get('search_error') or value.metadata.get('fetch_error') or '本地规则兜底'}"
-            for value in agent_results
-            if value.metadata.get("fallback_used")
+            step["notice"] for step in step_impacts if step.get("fallbackUsed") and step.get("notice")
         )
     search_metadata = outputs.get("search_task")
     if isinstance(search_metadata, AgentResult) and search_metadata.metadata.get("search_provider") in {
@@ -163,10 +354,7 @@ def summarize_pipeline_result(result: dict) -> dict:
         "citationValidation": public_projection["citationValidation"],
         "memoryTimeline": [_summarize_memory_item(item) for item in result.get("memory_items", [])],
         "ledgerSummary": _to_jsonable(result.get("ledger_summary", {})),
-        "handoffs": [
-            _summarize_handoff(handoff, result.get("ledger"))
-            for handoff in result.get("handoffs", [])
-        ],
+        "handoffs": _summarize_unique_handoffs(result.get("handoffs", []), result.get("ledger")),
         "reviewRounds": _summarize_review_rounds(result),
     }
 
@@ -317,6 +505,23 @@ def _summarize_handoff(handoff: Any, ledger=None) -> dict:
     }
 
 
+def _summarize_unique_handoffs(handoffs: list, ledger=None) -> list[dict]:
+    public_handoffs = []
+    seen = set()
+    for handoff in handoffs:
+        item = _summarize_handoff(handoff, ledger)
+        key = (
+            item["senderAgent"],
+            item["recipientAgent"],
+            tuple(item["artifactIds"]),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        public_handoffs.append(item)
+    return public_handoffs
+
+
 def _summarize_review_rounds(result: dict) -> list[dict]:
     current_report = result.get("initial_report")
     first_blue = result.get("blue_revision")
@@ -463,11 +668,18 @@ def _summarize_step(
     }
     if isinstance(agent_result, AgentResult):
         metadata = agent_result.metadata or {}
-        step["mode"] = "llm" if metadata.get("used_llm") and not metadata.get("fallback_used") else (
-            "local_fallback" if metadata.get("fallback_used") else "deterministic"
+        fallback_used = bool(metadata.get("fallback_used"))
+        step["mode"] = "llm" if metadata.get("used_llm") and not fallback_used else (
+            "local_fallback" if fallback_used else "deterministic"
         )
-        step["fallbackUsed"] = bool(metadata.get("fallback_used"))
-        step["error"] = metadata.get("llm_error") or metadata.get("search_error") or metadata.get("fetch_error")
+        step["fallbackUsed"] = fallback_used
+        step["status"] = "fallback" if fallback_used else ("done" if agent_result.success else "failed")
+        if fallback_used:
+            step["notice"] = _public_fallback_notice(agent_name, metadata)
+        elif not agent_result.success:
+            step["error"] = "该步骤未能完成。详细诊断信息已记录在服务端日志中。"
+    else:
+        step["status"] = "done" if agent_result is not None else "pending"
 
     if isinstance(output, ResearchPlan):
         step["impactOnFinalReport"] = "确定报告要回答的子问题、检索词和章节骨架，后续 Agent 都沿着这份计划工作。"
@@ -567,6 +779,19 @@ def _summarize_step(
     return step
 
 
+def _public_fallback_notice(agent_name: str, metadata: dict) -> str:
+    llm_error = str(metadata.get("llm_error") or "").lower()
+    if llm_error:
+        reason = "模型响应超时" if "timed out" in llm_error or "timeout" in llm_error else "模型调用未完成"
+    elif metadata.get("search_error"):
+        reason = "在线资料发现未完成"
+    elif metadata.get("fetch_error"):
+        reason = "网页正文读取未完成"
+    else:
+        reason = "外部能力未完成"
+    return f"{agent_name} 的{reason}，已自动改用本地规则完成该步骤。"
+
+
 def _unwrap_output(value: Any) -> Any:
     if isinstance(value, AgentResult):
         return value.output
@@ -648,12 +873,23 @@ def _summarize_memory_item(item: dict) -> dict:
     content = item.get("content", "")
     if not isinstance(content, str):
         content = json.dumps(_to_jsonable(content), ensure_ascii=False)
+    raw_metadata = item.get("metadata", {}) or {}
+    public_metadata = {
+        key: value
+        for key, value in raw_metadata.items()
+        if key not in {"llm_error", "search_error", "fetch_error", "provider_errors", "memory_error"}
+    }
+    if raw_metadata.get("fallback_used"):
+        public_metadata["fallback_notice"] = _public_fallback_notice(
+            str(item.get("source_agent") or "该步骤"),
+            raw_metadata,
+        )
     return {
         "taskId": item.get("task_id"),
         "sourceAgent": item.get("source_agent"),
         "itemType": item.get("item_type"),
         "summary": _trim_text(content, 240),
-        "metadata": _to_jsonable(item.get("metadata", {})),
+        "metadata": _to_jsonable(public_metadata),
     }
 
 
@@ -723,16 +959,14 @@ INDEX_HTML = """<!doctype html>
     main { max-width: 1440px; margin: 0 auto; padding: 20px 24px 32px; }
     .toolbar {
       display: grid;
-      grid-template-columns: minmax(280px, 1fr) auto;
+      grid-template-columns: minmax(280px, 1fr) 260px auto;
       gap: 12px;
       align-items: end;
       margin-bottom: 16px;
     }
     label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-    textarea {
+    textarea, input {
       width: 100%;
-      min-height: 72px;
-      resize: vertical;
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 10px 12px;
@@ -740,6 +974,7 @@ INDEX_HTML = """<!doctype html>
       background: white;
       color: var(--ink);
     }
+    textarea { min-height: 72px; resize: vertical; }
     button {
       min-width: 132px;
       height: 42px;
@@ -762,6 +997,21 @@ INDEX_HTML = """<!doctype html>
       font: inherit;
     }
     .status { color: var(--muted); font-size: 13px; min-height: 18px; margin-bottom: 14px; }
+    .guardrail-panel {
+      background: #eef6f3;
+      border: 1px solid #b8d5cc;
+      border-radius: 8px;
+      padding: 13px 14px;
+      margin-bottom: 16px;
+    }
+    .guardrail-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 10px; }
+    .guardrail-head h2 { margin: 0; font-size: 15px; }
+    .guardrail-head span { color: var(--accent); font-size: 12px; font-weight: 700; }
+    .guardrail-grid { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 8px; }
+    .guardrail-item { min-width: 0; padding: 8px 9px; background: #fff; border: 1px solid #d4e5df; border-radius: 6px; }
+    .guardrail-item span, .guardrail-item strong { display: block; overflow-wrap: anywhere; }
+    .guardrail-item span { color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+    .guardrail-item strong { font-size: 13px; }
     .metrics {
       display: grid;
       grid-template-columns: repeat(6, minmax(120px, 1fr));
@@ -878,7 +1128,7 @@ INDEX_HTML = """<!doctype html>
     @media (max-width: 980px) {
       main { padding: 16px; }
       .toolbar, .layout, .split { grid-template-columns: 1fr; }
-      .metrics { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+      .metrics, .guardrail-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
       button { width: 100%; }
     }
   </style>
@@ -893,9 +1143,23 @@ INDEX_HTML = """<!doctype html>
         <label for="question">研究问题 Research Question（要生成报告的问题）</label>
         <textarea id="question">影响企业采用开源 LLM（大语言模型）的主要因素有哪些？</textarea>
       </div>
-      <button id="runButton">生成报告</button>
+      <div>
+        <label for="accessToken">访问令牌 Access Token（仅非本机绑定需要）</label>
+        <input id="accessToken" type="password" autocomplete="off">
+      </div>
+      <div>
+        <button id="runButton">生成报告</button>
+        <button id="cancelButton" type="button" disabled>取消任务</button>
+      </div>
     </section>
     <div id="status" class="status"></div>
+    <section id="guardrailPanel" class="guardrail-panel" aria-labelledby="guardrailTitle">
+      <div class="guardrail-head">
+        <h2 id="guardrailTitle">运行护栏</h2>
+        <span id="guardrailState">正在读取</span>
+      </div>
+      <div id="guardrailGrid" class="guardrail-grid"></div>
+    </section>
     <section id="metrics" class="metrics"></section>
     <section class="layout">
       <div>
@@ -940,7 +1204,9 @@ INDEX_HTML = """<!doctype html>
   </main>
   <script>
     const questionEl = document.getElementById("question");
+    const accessTokenEl = document.getElementById("accessToken");
     const runButton = document.getElementById("runButton");
+    const cancelButton = document.getElementById("cancelButton");
     const statusEl = document.getElementById("status");
     let currentSteps = [];
     let currentReviewRounds = [];
@@ -950,9 +1216,49 @@ INDEX_HTML = """<!doctype html>
     let streamRendering = {};
     let streamFinalValues = {};
     let pendingCompletedPayload = null;
+    let currentRequestId = null;
 
     runButton.addEventListener("click", runResearch);
+    cancelButton.addEventListener("click", cancelResearch);
     statusEl.textContent = "请输入研究问题后，点击“生成报告”启动研究。";
+    loadGuardrails();
+    window.setInterval(loadGuardrails, 2000);
+
+    async function loadGuardrails() {
+      try {
+        const response = await fetch("/api/health", { headers: requestHeaders() });
+        if (!response.ok) throw new Error("guardrail status unavailable");
+        renderGuardrails(await response.json());
+      } catch (error) {
+        document.getElementById("guardrailState").textContent = "状态不可用";
+      }
+    }
+
+    function renderGuardrails(payload) {
+      const guardrails = payload.guardrails || {};
+      const manager = payload.requestManager || {};
+      const items = [
+        ["访问范围", guardrails.localOnly ? "仅本机" : "局域网"],
+        ["访问鉴权", guardrails.authRequired ? "Bearer 已要求" : "本机免令牌"],
+        ["请求体上限", `${Math.round((guardrails.requestBytes || 0) / 1024)} KB`],
+        ["问题长度", `${guardrails.questionChars || 0} 字符`],
+        ["并发任务", `${manager.activeRuns || 0} / ${guardrails.maxConcurrentRuns || 0}`],
+        ["单任务超时", `${guardrails.taskTimeoutSeconds || 0} 秒`],
+      ];
+      const grid = document.getElementById("guardrailGrid");
+      grid.replaceChildren();
+      for (const [label, value] of items) {
+        const item = document.createElement("div");
+        item.className = "guardrail-item";
+        const name = document.createElement("span");
+        const detail = document.createElement("strong");
+        name.textContent = label;
+        detail.textContent = value;
+        item.append(name, detail);
+        grid.append(item);
+      }
+      document.getElementById("guardrailState").textContent = payload.ok ? "已启用" : "异常";
+    }
 
     async function runResearch() {
       runButton.disabled = true;
@@ -961,20 +1267,47 @@ INDEX_HTML = """<!doctype html>
       try {
         const response = await fetch("/api/research/stream", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: requestHeaders(),
           body: JSON.stringify({ question: questionEl.value })
         });
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
-          throw new Error(payload.error || "请求失败");
+          throw new Error(payload.error?.message || "请求失败");
         }
+        currentRequestId = response.headers.get("X-Research-Request-Id");
+        cancelButton.disabled = !currentRequestId;
         await readSseStream(response, handleStreamEvent);
         await waitForStreamQueues();
       } catch (error) {
         statusEl.innerHTML = `<span class="error">${escapeHtml(error.message)}</span>`;
       } finally {
         runButton.disabled = false;
+        cancelButton.disabled = true;
+        currentRequestId = null;
       }
+    }
+
+    function requestHeaders() {
+      const headers = { "Content-Type": "application/json" };
+      const token = accessTokenEl.value.trim();
+      if (token) headers.Authorization = `Bearer ${token}`;
+      return headers;
+    }
+
+    async function cancelResearch() {
+      if (!currentRequestId) return;
+      cancelButton.disabled = true;
+      const response = await fetch("/api/research/cancel", {
+        method: "POST",
+        headers: requestHeaders(),
+        body: JSON.stringify({ requestId: currentRequestId })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        statusEl.textContent = payload.error?.message || "取消失败";
+        return;
+      }
+      statusEl.textContent = "正在取消当前研究任务...";
     }
 
     function clearDashboard() {
@@ -1030,6 +1363,12 @@ INDEX_HTML = """<!doctype html>
     }
 
     function handleStreamEvent(event, data) {
+      if (event === "run_status") {
+        currentRequestId = data.requestId || currentRequestId;
+        cancelButton.disabled = !currentRequestId;
+        statusEl.textContent = `任务 ${currentRequestId || ""} 正在运行。`;
+        return;
+      }
       if (event === "run_started") {
         currentSteps = data.steps || [];
         renderSteps(currentSteps);
@@ -1051,6 +1390,17 @@ INDEX_HTML = """<!doctype html>
         upsertHandoff(data.handoff);
         const handoff = data.handoff || {};
         statusEl.textContent = `${handoff.senderAgent || "上游 Agent"} 已将成果交给 ${handoff.recipientAgent || "下游 Agent"}`;
+        return;
+      }
+      if (event === "review_agent_started") {
+        const reviewAgent = data.agent === "RedAgent" ? "Red 审查" : "Blue 修订";
+        const executionMode = data.modelBacked ? "模型处理中" : "本地快速验证，不再调用模型";
+        statusEl.textContent = `第 ${data.round} / ${data.maxRounds} 轮：${reviewAgent}正在运行（${executionMode}）...`;
+        return;
+      }
+      if (event === "review_agent_completed") {
+        const reviewAgent = data.agent === "RedAgent" ? "Red 审查" : "Blue 修订";
+        statusEl.textContent = `第 ${data.round} / ${data.maxRounds} 轮：${reviewAgent}已完成`;
         return;
       }
       if (event === "review_round_started") {
@@ -1091,7 +1441,8 @@ INDEX_HTML = """<!doctype html>
         return;
       }
       if (event === "run_error") {
-        statusEl.innerHTML = `<span class="error">${escapeHtml(data.error || "运行失败")}</span>`;
+        const message = typeof data.error === "object" ? data.error.message : data.error;
+        statusEl.innerHTML = `<span class="error">${escapeHtml(message || "运行失败")}</span>`;
       }
     }
 
@@ -1164,11 +1515,10 @@ INDEX_HTML = """<!doctype html>
       renderPayload(payload);
       const fallbackCount = payload?.modelRun?.fallbackCount || 0;
       const degradationReasons = payload?.degradationReasons || [];
-      if (fallbackCount || degradationReasons.length) {
-        const firstError = firstStepError(payload?.stepImpacts || []);
-        statusEl.textContent = firstError
-          ? `报告已生成，但需要复查。首个问题：${firstError}`
-          : `报告已生成，但需要复查：${degradationReasons[0] || "部分步骤未使用真实模型或来源"}`;
+      if (fallbackCount) {
+        statusEl.textContent = `报告已完成：${fallbackCount} 个步骤的模型调用未完成，系统已自动改用本地规则。对应步骤已标出，可重点复核。`;
+      } else if (degradationReasons.length) {
+        statusEl.textContent = `报告已生成。${degradationReasons[0]}`;
       } else {
         statusEl.textContent = "报告已生成：全部 Agent 均完成模型调用。";
       }
@@ -1277,11 +1627,6 @@ INDEX_HTML = """<!doctype html>
       }).join("");
     }
 
-    function firstStepError(steps) {
-      const failed = steps.find(step => step && step.error);
-      return failed ? failed.error : "";
-    }
-
     function renderMetrics(metrics) {
       document.getElementById("metrics").innerHTML = Object.entries(metrics).map(([key, value]) => `
         <div class="metric"><span>${escapeHtml(metricLabel(key))}</span><strong>${escapeHtml(metricValue(key, value))}</strong></div>
@@ -1367,9 +1712,9 @@ INDEX_HTML = """<!doctype html>
           <ul class="list">${group.items.map(item => `<li>${escapeHtml(String(item))}</li>`).join("")}</ul>
         </details>
       `).join("");
-      const errorBox = step.error
-        ? `<div class="failure"><strong>失败原因 Failure reason:</strong> ${escapeHtml(step.error)}</div>`
-        : "";
+      const noticeBox = step.notice
+        ? `<div class="failure"><strong>自动处理说明：</strong> ${escapeHtml(step.notice)}</div>`
+        : (step.error ? `<div class="failure"><strong>此步骤未完成：</strong> ${escapeHtml(step.error)}</div>` : "");
       return `
         <article class="step">
           <div class="step-head">
@@ -1380,7 +1725,7 @@ INDEX_HTML = """<!doctype html>
             <span class="badge ${badgeClass}">${escapeHtml(statusLabel(status))}</span>
           </div>
           <p class="impact">${escapeHtml(step.impactOnFinalReport)}</p>
-          ${errorBox}
+          ${noticeBox}
           <div class="chips">${modeChip}${metricChips}</div>
           ${bullets ? `<ul class="list">${bullets}</ul>` : ""}
           ${highlights}
@@ -1393,7 +1738,7 @@ INDEX_HTML = """<!doctype html>
         pending: "等待 PENDING",
         running: "运行中 RUNNING",
         done: "完成 DONE",
-        fallback: "本地兜底 FALLBACK",
+        fallback: "已用本地规则完成",
         failed: "失败 FAILED"
       };
       return labels[status] || status;
@@ -1403,7 +1748,7 @@ INDEX_HTML = """<!doctype html>
       const labels = {
         llm: "LLM 模型调用",
         mock_llm: "Mock LLM（测试模型）",
-        local_fallback: "Local fallback（本地兜底）",
+        local_fallback: "本地规则（模型未响应）",
         pending: "等待"
       };
       return labels[mode] || mode || "";
@@ -1563,40 +1908,120 @@ class ReportWorkbenchHandler(BaseHTTPRequestHandler):
     server_version = "DeepResearchWorkbench/1.0"
     protocol_version = "HTTP/1.1"
 
+    @property
+    def request_manager(self) -> ResearchRequestManager:
+        manager = getattr(self.server, "request_manager", None)
+        if manager is None:
+            manager = ResearchRequestManager()
+            self.server.request_manager = manager
+        return manager
+
+    @property
+    def access_token(self) -> str | None:
+        return getattr(self.server, "access_token", None)
+
+    def _guardrail_status(self) -> dict[str, Any]:
+        manager = self.request_manager
+        return {
+            "localOnly": _is_loopback_host(str(self.server.server_address[0])),
+            "authRequired": bool(self.access_token),
+            "requestBytes": MAX_REQUEST_BYTES,
+            "questionChars": MAX_QUESTION_CHARS,
+            "maxConcurrentRuns": manager.max_concurrent_runs,
+            "taskTimeoutSeconds": manager.timeout_seconds,
+        }
+
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path == "/":
             self._write_html(INDEX_HTML)
             return
         if path == "/api/health":
-            self._write_json({"ok": True, "service": "deep-research-report-workbench"})
+            self._write_json({
+                "ok": True,
+                "service": "deep-research-report-workbench",
+                "requestManager": self.request_manager.status(),
+                "guardrails": self._guardrail_status(),
+            })
             return
-        self.send_error(404, "Not found")
+        if path == "/api/research/status":
+            self._write_json(self.request_manager.status())
+            return
+        self._write_api_error(APIError(404, "NOT_FOUND", "The requested endpoint was not found."))
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
-        if path not in {"/api/research", "/api/research/stream"}:
-            self.send_error(404, "Not found")
+        if path not in {"/api/research", "/api/research/stream", "/api/research/cancel"}:
+            self._write_api_error(APIError(404, "NOT_FOUND", "The requested endpoint was not found."))
             return
         try:
+            self._require_authorization()
             body = self._read_json_body()
-            if path == "/api/research/stream":
-                self._write_streaming_payload(body.get("question", DEFAULT_QUESTION))
+            if path == "/api/research/cancel":
+                request_id = body.get("requestId")
+                if not isinstance(request_id, str) or not request_id:
+                    raise APIError(422, "INVALID_REQUEST_ID", "requestId must be a non-empty string.")
+                if not self.request_manager.cancel(request_id):
+                    raise APIError(404, "RUN_NOT_ACTIVE", "No active research task matches that requestId.")
+                self._write_json({"accepted": True, "requestId": request_id, "status": "cancelling"}, status=202)
                 return
-            payload = build_report_workbench_payload(
-                body.get("question", DEFAULT_QUESTION),
-                use_env_llm=True,
+            question = self._validate_question(body)
+            if path == "/api/research/stream":
+                self._write_streaming_payload(question)
+                return
+            run = self.request_manager.submit(
+                lambda context: build_report_workbench_payload(
+                    question,
+                    use_env_llm=True,
+                    event_sink=lambda event_type, data: context.check_cancelled(),
+                    cancellation_context=context,
+                )
             )
-            self._write_json(payload)
-        except Exception as exc:  # pragma: no cover - exercised manually through the browser
-            self._write_json({"ok": False, "error": str(exc)}, status=500)
+            payload = self.request_manager.wait(run)
+            payload["requestStatus"] = {"requestId": run.request_id, "status": "completed"}
+            self._write_json(payload, headers={"X-Research-Request-Id": run.request_id})
+        except APIError as exc:
+            self._write_api_error(exc)
+        except Exception:  # pragma: no cover - integration tests cover the stable outward contract
+            LOGGER.exception("Unhandled workbench request failure")
+            self._write_api_error(APIError(500, "INTERNAL_ERROR", "The research request failed unexpectedly."))
 
     def _read_json_body(self) -> dict:
-        length = int(self.headers.get("Content-Length", "0") or 0)
+        try:
+            length = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError as exc:
+            raise APIError(400, "INVALID_CONTENT_LENGTH", "Content-Length must be an integer.") from exc
+        if length < 0:
+            raise APIError(400, "INVALID_CONTENT_LENGTH", "Content-Length must not be negative.")
+        if length > MAX_REQUEST_BYTES:
+            raise APIError(413, "REQUEST_TOO_LARGE", "The JSON request body is too large.")
         if length <= 0:
             return {}
-        raw_body = self.rfile.read(length).decode("utf-8")
-        return json.loads(raw_body or "{}")
+        try:
+            raw_body = self.rfile.read(length).decode("utf-8")
+            body = json.loads(raw_body or "{}")
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise APIError(400, "INVALID_JSON", "The request body must be valid UTF-8 JSON.") from exc
+        if not isinstance(body, dict):
+            raise APIError(400, "INVALID_JSON", "The request body must be a JSON object.")
+        return body
+
+    def _validate_question(self, body: dict) -> str:
+        question = body.get("question", DEFAULT_QUESTION)
+        if not isinstance(question, str):
+            raise APIError(422, "INVALID_QUESTION", "question must be a string.")
+        question = question.strip()
+        if not question or len(question) > MAX_QUESTION_CHARS:
+            raise APIError(422, "INVALID_QUESTION", f"question must contain 1 to {MAX_QUESTION_CHARS} characters.")
+        return question
+
+    def _require_authorization(self) -> None:
+        if self.access_token is None:
+            return
+        provided = self.headers.get("Authorization", "")
+        expected = f"Bearer {self.access_token}"
+        if not hmac.compare_digest(provided, expected):
+            raise APIError(401, "UNAUTHORIZED", "A valid bearer token is required.")
 
     def _write_html(self, body: str, status: int = 200) -> None:
         encoded = body.encode("utf-8")
@@ -1606,19 +2031,67 @@ class ReportWorkbenchHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
-    def _write_json(self, body: dict, status: int = 200) -> None:
+    def _write_json(self, body: dict, status: int = 200, headers: dict[str, str] | None = None) -> None:
         encoded = json.dumps(body, ensure_ascii=False, indent=2).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        if headers:
+            for name, value in headers.items():
+                self.send_header(name, value)
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
         self.wfile.write(encoded)
+
+    def _write_api_error(self, error: APIError) -> None:
+        headers = {"WWW-Authenticate": "Bearer"} if error.status == 401 else {}
+        if error.status == 413:
+            headers["Connection"] = "close"
+            self.close_connection = True
+        self._write_json(
+            {"error": {"code": error.code, "message": error.message}},
+            status=error.status,
+            headers=headers or None,
+        )
 
     def _write_streaming_payload(self, question: str) -> None:
         """为耗时任务在最终 Payload 前持续推送状态事件。
 
         event sink 被传入流水线适配层，因此 UI 观察到的是实际执行里程碑，而不是伪造进度条。
         """
+        stream_ready = threading.Event()
+        write_lock = threading.Lock()
+
+        def emit(event_type: str, data: dict) -> None:
+            encoded = (
+                f"event: {event_type}\n"
+                f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+            ).encode("utf-8")
+            with write_lock:
+                self.wfile.write(encoded)
+                self.wfile.flush()
+
+        def operation(context: ResearchRunContext):
+            stream_ready.wait()
+            context.check_cancelled()
+
+            def guarded_emit(event_type: str, data: dict) -> None:
+                context.check_cancelled()
+                try:
+                    emit(event_type, data)
+                except (BrokenPipeError, ConnectionResetError) as exc:
+                    context.cancel()
+                    raise ResearchCancelled("Streaming client disconnected") from exc
+
+            return build_report_workbench_payload(
+                question,
+                use_env_llm=True,
+                event_sink=guarded_emit,
+                cancellation_context=context,
+            )
+
+        run = self.request_manager.submit(operation)
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache, no-transform")
@@ -1627,26 +2100,22 @@ class ReportWorkbenchHandler(BaseHTTPRequestHandler):
         # 浏览器前端在读取到流结束后才会恢复“生成报告”按钮。这个端点不是
         # 永久订阅，而是一轮任务对应一条有限事件流，因此完成后必须关闭连接。
         self.send_header("Connection", "close")
+        self.send_header("X-Research-Request-Id", run.request_id)
         self.end_headers()
         self.wfile.write(b": stream-connected\n\n")
         self.wfile.flush()
-
-        def emit(event_type: str, data: dict) -> None:
-            encoded = (
-                f"event: {event_type}\n"
-                f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
-            ).encode("utf-8")
-            self.wfile.write(encoded)
-            self.wfile.flush()
+        stream_ready.set()
+        emit("run_status", {"requestId": run.request_id, "status": "running"})
 
         try:
-            build_report_workbench_payload(
-                question,
-                use_env_llm=True,
-                event_sink=emit,
-            )
-        except Exception as exc:  # pragma: no cover - exercised manually through the browser
-            emit("run_error", {"error": str(exc)})
+            self.request_manager.wait(run)
+        except APIError as exc:
+            try:
+                emit("run_error", {"error": {"code": exc.code, "message": exc.message}, "status": "failed"})
+            except (BrokenPipeError, ConnectionResetError):
+                run.context.cancel()
+        except (BrokenPipeError, ConnectionResetError):
+            run.context.cancel()
         finally:
             # 显式结束 HTTP 响应，令 Fetch 的 reader.read() 返回 done=true，
             # 前端 runResearch() 的 finally 才能重新启用按钮。
@@ -1656,11 +2125,58 @@ class ReportWorkbenchHandler(BaseHTTPRequestHandler):
         return
 
 
-def run_server(host: str = "127.0.0.1", port: int | None = None) -> None:
+class WorkbenchHTTPServer(ThreadingHTTPServer):
+    def server_close(self) -> None:
+        manager = getattr(self, "request_manager", None)
+        if manager is not None:
+            manager.shutdown()
+        super().server_close()
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def create_server(
+    host: str = "127.0.0.1",
+    port: int = 18181,
+    *,
+    access_token: str | None = None,
+    request_manager: ResearchRequestManager | None = None,
+) -> WorkbenchHTTPServer:
+    if not 0 <= port <= 65535:
+        raise ValueError("port must be between 0 and 65535")
+    token = access_token.strip() if access_token else None
+    if not _is_loopback_host(host) and not token:
+        raise ValueError("DEEP_RESEARCH_ACCESS_TOKEN is required for non-loopback binding")
+    server = WorkbenchHTTPServer((host, port), ReportWorkbenchHandler)
+    server.access_token = token
+    server.request_manager = request_manager or ResearchRequestManager()
+    return server
+
+
+def run_server(host: str | None = None, port: int | None = None) -> None:
+    selected_host = host or os.environ.get("DEEP_RESEARCH_WEB_HOST", "127.0.0.1")
     selected_port = port or int(os.environ.get("DEEP_RESEARCH_WEB_PORT", "18181"))
-    server = ThreadingHTTPServer((host, selected_port), ReportWorkbenchHandler)
-    print(f"DeepResearch Report Workbench started at http://{host}:{selected_port}")
-    server.serve_forever()
+    access_token = os.environ.get("DEEP_RESEARCH_ACCESS_TOKEN")
+    max_runs = int(os.environ.get("DEEP_RESEARCH_MAX_CONCURRENT_RUNS", str(DEFAULT_MAX_CONCURRENT_RUNS)))
+    timeout_seconds = float(os.environ.get("DEEP_RESEARCH_TASK_TIMEOUT_SECONDS", str(DEFAULT_TASK_TIMEOUT_SECONDS)))
+    server = create_server(
+        selected_host,
+        selected_port,
+        access_token=access_token,
+        request_manager=ResearchRequestManager(max_runs, timeout_seconds),
+    )
+    print(f"DeepResearch Report Workbench started at http://{selected_host}:{selected_port}")
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
 
 
 if __name__ == "__main__":

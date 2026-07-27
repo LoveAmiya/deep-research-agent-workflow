@@ -1,6 +1,7 @@
 import http.client
 import json
 import threading
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -11,12 +12,16 @@ from report_workbench import (
     INDEX_HTML,
     TASK_ORDER,
     ReportWorkbenchHandler,
+    ResearchRunContext,
+    ResearchRequestManager,
     build_report_workbench_payload,
+    create_server,
 )
 from agents.base_agent import AgentContext
 from agents.writer_agent import WriterAgent
 from agents.blue_agent import BlueAgent
 from agents.critic_agent import CriticAgent
+from core.llm_client import LLMClientError
 from core.schema import Finding, RedReviewResult, ResearchPlan, ResearchQuestion, ResearchReport, ReviewIssue
 from tools.citation_tool import CitationRegistry
 
@@ -54,7 +59,211 @@ class StreamingScriptedChineseLLMClient(ScriptedChineseLLMClient):
             yield response.content[index : index + 17]
 
 
+class TimeoutAfterWriterLLMClient(ScriptedChineseLLMClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.timed_out = False
+
+    def generate(self, messages, temperature=0.2):
+        is_critic = any("critic" in message.content.lower() for message in messages)
+        if self.timed_out or is_critic:
+            self.timed_out = True
+            self.calls.append(messages[-1].content)
+            raise LLMClientError("The read operation timed out")
+        return super().generate(messages, temperature=temperature)
+
+
 class TestReportWorkbench(unittest.TestCase):
+    def _start_server(self, **kwargs):
+        server = create_server("127.0.0.1", 0, **kwargs)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(lambda: thread.join(timeout=2))
+        self.addCleanup(server.shutdown)
+        return server
+
+    def test_rejects_non_loopback_binding_without_access_token(self) -> None:
+        with self.assertRaises(ValueError):
+            create_server("0.0.0.0", 0)
+
+    def test_health_exposes_safe_runtime_guardrails_for_the_dashboard(self) -> None:
+        manager = ResearchRequestManager(max_concurrent_runs=1, timeout_seconds=12.5)
+        server = self._start_server(request_manager=manager)
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+        try:
+            connection.request("GET", "/api/health")
+            response = connection.getresponse()
+            payload = json.loads(response.read())
+        finally:
+            connection.close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["guardrails"], {
+            "localOnly": True,
+            "authRequired": False,
+            "requestBytes": 16 * 1024,
+            "questionChars": 4_000,
+            "maxConcurrentRuns": 1,
+            "taskTimeoutSeconds": 12.5,
+        })
+        self.assertNotIn("accessToken", json.dumps(payload))
+
+    def test_browser_renders_live_guardrail_status(self) -> None:
+        self.assertIn('id="guardrailPanel"', INDEX_HTML)
+        self.assertIn("renderGuardrails", INDEX_HTML)
+        self.assertIn('fetch("/api/health"', INDEX_HTML)
+
+    def test_non_loopback_server_requires_bearer_token_for_research(self) -> None:
+        server = create_server("0.0.0.0", 0, access_token="test-secret")
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+        try:
+            connection.request("POST", "/api/research", body=b"{}", headers={"Content-Type": "application/json"})
+            response = connection.getresponse()
+            payload = json.loads(response.read())
+            self.assertEqual(response.status, 401)
+            self.assertEqual(payload["error"]["code"], "UNAUTHORIZED")
+        finally:
+            connection.close()
+            server.shutdown()
+            thread.join(timeout=2)
+            server.server_close()
+
+    def test_rejects_oversized_body_and_question_with_structured_errors(self) -> None:
+        server = self._start_server()
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+        try:
+            oversized = json.dumps({"question": "x" * 20_000})
+            connection.request("POST", "/api/research", body=oversized, headers={"Content-Type": "application/json"})
+            response = connection.getresponse()
+            payload = json.loads(response.read())
+            self.assertEqual(response.status, 413)
+            self.assertEqual(payload["error"]["code"], "REQUEST_TOO_LARGE")
+
+            connection.request("POST", "/api/research", body=json.dumps({"question": "x" * 4_001}), headers={"Content-Type": "application/json"})
+            response = connection.getresponse()
+            payload = json.loads(response.read())
+            self.assertEqual(response.status, 422)
+            self.assertEqual(payload["error"]["code"], "INVALID_QUESTION")
+        finally:
+            connection.close()
+
+    def test_times_out_long_research_with_safe_error(self) -> None:
+        manager = ResearchRequestManager(max_concurrent_runs=1, timeout_seconds=0.05)
+        server = self._start_server(request_manager=manager)
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+
+        def slow_build(*args, **kwargs):
+            time.sleep(0.2)
+            return {"secret_path": "C:/private/internal.txt"}
+
+        try:
+            with patch("report_workbench.build_report_workbench_payload", slow_build):
+                connection.request("POST", "/api/research", body=b"{}", headers={"Content-Type": "application/json"})
+                response = connection.getresponse()
+                payload = json.loads(response.read())
+            self.assertEqual(response.status, 504)
+            self.assertEqual(payload["error"]["code"], "RESEARCH_TIMEOUT")
+            self.assertNotIn("private", json.dumps(payload))
+        finally:
+            connection.close()
+
+    def test_rejects_a_second_run_when_concurrency_is_full(self) -> None:
+        manager = ResearchRequestManager(max_concurrent_runs=1, timeout_seconds=2)
+        server = self._start_server(request_manager=manager)
+        release = threading.Event()
+
+        def blocking_build(question, **kwargs):
+            release.wait(timeout=1)
+            return {"ok": True, "question": question}
+
+        first_result = {}
+
+        def first_request():
+            connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+            connection.request("POST", "/api/research", body=b"{}", headers={"Content-Type": "application/json"})
+            response = connection.getresponse()
+            first_result["status"] = response.status
+            response.read()
+            connection.close()
+
+        try:
+            with patch("report_workbench.build_report_workbench_payload", blocking_build):
+                first = threading.Thread(target=first_request)
+                first.start()
+                deadline = time.time() + 1
+                while manager.status()["activeRuns"] < 1 and time.time() < deadline:
+                    time.sleep(0.01)
+
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+                connection.request("POST", "/api/research", body=b"{}", headers={"Content-Type": "application/json"})
+                response = connection.getresponse()
+                payload = json.loads(response.read())
+                connection.close()
+                self.assertEqual(response.status, 429)
+                self.assertEqual(payload["error"]["code"], "SERVER_BUSY")
+                release.set()
+                first.join(timeout=2)
+                self.assertEqual(first_result["status"], 200)
+        finally:
+            release.set()
+
+    def test_request_manager_cancels_an_active_run_cooperatively(self) -> None:
+        manager = ResearchRequestManager(max_concurrent_runs=1, timeout_seconds=1)
+        started = threading.Event()
+
+        def operation(context):
+            started.set()
+            while True:
+                context.check_cancelled()
+                time.sleep(0.01)
+
+        run = manager.submit(operation)
+        self.assertTrue(started.wait(timeout=1))
+        self.assertTrue(manager.cancel(run.request_id))
+        with self.assertRaisesRegex(Exception, "cancelled"):
+            manager.wait(run)
+        self.assertEqual(manager.status()["runs"][-1]["status"], "cancelled")
+        manager.shutdown()
+
+    def test_timeout_invokes_registered_cancellation_callbacks(self) -> None:
+        manager = ResearchRequestManager(max_concurrent_runs=1, timeout_seconds=0.05)
+        callback_called = threading.Event()
+        operation_started = threading.Event()
+
+        def operation(context):
+            context.add_cancel_callback(callback_called.set)
+            operation_started.set()
+            callback_called.wait(timeout=1)
+            context.check_cancelled()
+
+        run = manager.submit(operation)
+        self.assertTrue(operation_started.wait(timeout=1))
+        with self.assertRaisesRegex(Exception, "time limit"):
+            manager.wait(run)
+        self.assertTrue(callback_called.wait(timeout=0.2))
+        manager.shutdown()
+
+    def test_review_loop_reports_the_active_agent_and_round(self) -> None:
+        events = []
+
+        build_report_workbench_payload(
+            "How should teams evaluate agentic research tools?",
+            event_sink=lambda event_type, data: events.append((event_type, data)),
+        )
+
+        active = [data for event_type, data in events if event_type == "review_agent_started"]
+        self.assertTrue(active)
+        self.assertTrue(all(item["round"] >= 2 for item in active))
+        self.assertTrue(all(item["agent"] in {"RedAgent", "BlueAgent"} for item in active))
+        self.assertTrue(all(item["modelBacked"] is False for item in active))
+
+    def test_browser_labels_nested_review_rounds_instead_of_reusing_stale_blue_status(self) -> None:
+        self.assertIn('event === "review_agent_started"', INDEX_HTML)
+        self.assertIn("data.round", INDEX_HTML)
+        self.assertIn("本地快速验证，不再调用模型", INDEX_HTML)
     def test_public_workbench_never_presents_mock_sources_as_verified_references(self) -> None:
         payload = build_report_workbench_payload("What affects enterprise LLM adoption?")
 
@@ -116,6 +325,11 @@ class TestReportWorkbench(unittest.TestCase):
         self.assertIn("pendingCompletedPayload", INDEX_HTML)
         self.assertIn("flushCompletedPayloadWhenReady", INDEX_HTML)
         self.assertNotIn('if (event === "run_completed") {\n        renderPayload(data.payload);', INDEX_HTML)
+
+    def test_browser_supports_cancellation_and_structured_api_errors(self) -> None:
+        self.assertIn('id="cancelButton"', INDEX_HTML)
+        self.assertIn('"/api/research/cancel"', INDEX_HTML)
+        self.assertIn("payload.error?.message", INDEX_HTML)
 
     def test_default_analysis_has_six_distinct_points_and_a_real_discussion(self) -> None:
         payload = build_report_workbench_payload("影响企业采用开源大语言模型的主要因素有哪些？")
@@ -387,6 +601,37 @@ class TestReportWorkbench(unittest.TestCase):
         self.assertEqual(payload["modelRun"]["mode"], "collaborative_dag_deterministic")
         self.assertIn("本次运行没有成功消费任何模型输出。", payload["degradationReasons"])
         self.assertTrue(any("模拟/确定性来源" in reason for reason in payload["degradationReasons"]))
+
+    def test_model_timeout_finishes_with_readable_fallback_status_and_no_raw_error(self) -> None:
+        client = TimeoutAfterWriterLLMClient()
+
+        payload = build_report_workbench_payload(
+            "影响企业采用开源 LLM 的主要因素有哪些？",
+            llm_client=client,
+        )
+
+        steps = {step["taskId"]: step for step in payload["stepImpacts"]}
+        self.assertTrue(payload["success"])
+        self.assertEqual(len(client.calls), 5)
+        for task_id in ("critic_task", "red_review_task", "blue_revision_task"):
+            self.assertEqual(steps[task_id]["status"], "fallback")
+            self.assertIn("已自动改用本地规则", steps[task_id]["notice"])
+            self.assertNotIn("error", steps[task_id])
+        self.assertNotIn("The read operation timed out", json.dumps(payload, ensure_ascii=False))
+
+    def test_public_handoffs_do_not_repeat_the_same_artifact_transfer(self) -> None:
+        payload = build_report_workbench_payload("What affects enterprise LLM adoption?")
+
+        keys = [
+            (item["senderAgent"], item["recipientAgent"], tuple(item["artifactIds"]))
+            for item in payload["handoffs"]
+        ]
+        self.assertEqual(len(keys), len(set(keys)))
+
+    def test_browser_explains_fallback_without_exposing_internal_exception_text(self) -> None:
+        self.assertIn("已自动改用本地规则", INDEX_HTML)
+        self.assertNotIn("首个问题：${firstError}", INDEX_HTML)
+        self.assertNotIn("失败原因 Failure reason:", INDEX_HTML)
 
     def test_public_payload_exposes_agent_summaries_but_not_raw_output_previews(self) -> None:
         payload = build_report_workbench_payload("How should teams evaluate agentic research tools?")

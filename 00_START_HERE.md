@@ -2,10 +2,20 @@
 
 本手册对应 `feat/collaboration-ledger` 分支。该分支展示真实的运行内 Agent 工件交接、多轮 Red/Blue 审查和 SSE 工作台；它没有新增真实数据源。
 
+## 最短启动路径
+
+在仓库根目录执行：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\test-local.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run_workbench.ps1
+```
+
+浏览器打开 <http://127.0.0.1:18181/>。默认确定性模式不需要 API Key；它用于演示协作流程，不应把生成内容当作已核验研究结论。
+
 ## 1. 切换到正确分支
 
 ```powershell
-cd "F:\All projects\deep-research-agent"
 git switch feat/collaboration-ledger
 git status --short --branch
 ```
@@ -23,7 +33,7 @@ python --version
 ## 3. 先运行测试
 
 ```powershell
-.\run_tests.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run_tests.ps1
 ```
 
 也可以分别运行：
@@ -40,7 +50,7 @@ python -m unittest discover -s tests -p "test_*.py"
 默认端口：
 
 ```powershell
-.\run_workbench.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run_workbench.ps1
 ```
 
 浏览器打开：<http://127.0.0.1:18181/>
@@ -49,7 +59,7 @@ python -m unittest discover -s tests -p "test_*.py"
 
 ```powershell
 $env:DEEP_RESEARCH_WEB_PORT="18183"
-.\run_workbench.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run_workbench.ps1
 ```
 
 浏览器打开：<http://127.0.0.1:18183/>
@@ -72,8 +82,8 @@ Copy-Item .env.example .env
 
 ```dotenv
 DEEP_RESEARCH_USE_LLM=1
-DEEP_RESEARCH_LLM_MODEL=your-model-name
-DEEP_RESEARCH_LLM_API_KEY=your-api-key
+DEEP_RESEARCH_LLM_MODEL=<your-model-name>
+DEEP_RESEARCH_LLM_API_KEY=<your-api-key>
 DEEP_RESEARCH_LLM_BASE_URL=https://api.openai.com/v1
 ```
 
@@ -89,11 +99,13 @@ DEEP_RESEARCH_LLM_BASE_URL=https://api.openai.com/v1
 2. Writer 初始草稿逐段显示。
 3. Critic 审查状态。
 4. 第一轮、第二轮以及可能的第三轮 Red/Blue 审查内容。
-5. Red 的具体问题、依据与建议。
-6. Blue 的修改原因、修改前内容和修改后内容。
-7. Agent 交接卡片中的工件名称、摘要、接收动作和状态。
-8. 校验后的最终报告。
-9. 有真实 Evidence 时显示来源、摘录、链接和字符位置。
+5. 模型超时时，对应节点显示“已用本地规则完成”，而不是一直停在“运行中”或“等待”。
+6. 页面最终提示任务已经完成，并说明需要重点复核哪些降级步骤；不会展示原始异常、密钥或本机路径。
+7. Red 的具体问题、依据与建议。
+8. Blue 的修改原因、修改前内容和修改后内容。
+9. Agent 交接卡片中的工件名称、摘要、接收动作和状态。
+10. 校验后的最终报告。
+11. 有真实 Evidence 时显示来源、摘录、链接和字符位置。
 
 后端仍使用 JSON/SSE 作为机器协议，但普通页面不显示原始 Agent JSON。
 
