@@ -44,7 +44,7 @@ python -m unittest tests.test_report_workbench
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
-测试验证协作账本、Agent 工件依赖、Red/Blue 轮次、SSE 顺序、报告结构、mock 隔离，以及网页抓取的 SSRF、重定向和响应大小边界。测试通过不代表外部网站一定可访问。
+测试验证协作账本、Agent 工件依赖、Red/Blue 轮次、SSE 顺序、报告结构、mock 隔离，以及网页抓取的 SSRF、重定向和响应大小边界。截至 2026-08-02，完整测试集为 `328/328` 通过。测试通过不代表外部网站一定可访问。
 
 ## 4. 启动浏览器工作台
 

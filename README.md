@@ -26,7 +26,7 @@ DeepResearchAgent 是一个本地优先的多 Agent 研究报告项目。当前�
 
 ### 当前本机演示验收
 
-截至 2026-08-02，完整测试集为 `325/325` 通过。针对“Critic 超时后 Blue 长时间运行”的回归测试会验证：任务仍能结束、后续节点显示“已用本地规则完成”、公开 Payload 不含原始超时异常，并且同一工件交接不会重复展示；抓取测试还覆盖 SSRF、非 HTTP(S) URL、重定向、超大响应拒绝和仓库数据隔离。
+截至 2026-08-02，完整测试集为 `328/328` 通过。针对“Critic 超时后 Blue 长时间运行”的回归测试会验证：任务仍能结束、后续节点显示“已用本地规则完成”、公开 Payload 不含原始超时异常，并且同一工件交接不会重复展示；抓取测试还覆盖 SSRF、非 HTTP(S) URL、重定向、超大响应拒绝和仓库数据隔离。
 
 ### 快速启动
 
@@ -228,8 +228,9 @@ Red/Blue review rounds, a final report, and citation-shape validation. It does
 not claim that deterministic or `mock://` source material is externally
 verified evidence.
 
-Use `xhigh` for longer manual report runs when latency is acceptable; the smoke
-test defaults to `medium` so all nine model stages finish predictably.
+Keep the live smoke at `medium`; it deliberately does not inherit an unrelated
+`OPENAI_REASONING_EFFORT` value. Use another reasoning level only as an explicit,
+one-off manual override when you have accepted the additional latency.
 
 Verified locally on 2026-08-02: `328/328` tests passed. The live local report
 smoke completed `9` model calls with `0` fallbacks, generated a 2,242-character
