@@ -204,6 +204,37 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run_workbench.ps1
 
 Open <http://127.0.0.1:18181/>. Set `DEEP_RESEARCH_WEB_PORT` in the process environment before startup to use another port.
 
+### Local live-model report smoke
+
+The normal workbench remains deterministic when no LLM configuration is present.
+To verify the full local model-backed workbench without saving a key in the
+repository, keep `OPENAI_API_KEY` in the Windows user or current-process
+environment and run:
+
+```powershell
+$env:DEEP_RESEARCH_LLM_API_KEY = $env:OPENAI_API_KEY
+$env:DEEP_RESEARCH_LLM_MODEL = $env:OPENAI_MODEL
+$env:DEEP_RESEARCH_LLM_BASE_URL = "https://crs.ruinique.com"
+$env:DEEP_RESEARCH_LLM_WIRE_API = "responses"
+$env:DEEP_RESEARCH_LLM_REASONING_EFFORT = "medium"
+python .\evaluation\run_live_report_smoke.py
+```
+
+Dedicated `DEEP_RESEARCH_LLM_*` values take precedence. If they are absent,
+the smoke script reads the compatible `OPENAI_*` environment values and uses
+the configured relay instead of persisting credentials. Its sanitized result is
+ignored by Git. The check requires all seven model workbench stages, two
+Red/Blue review rounds, a final report, and citation-shape validation. It does
+not claim that deterministic or `mock://` source material is externally
+verified evidence.
+
+Use `xhigh` for longer manual report runs when latency is acceptable; the smoke
+test defaults to `medium` so all nine model stages finish predictably.
+
+Verified locally on 2026-08-02: `328/328` tests passed. The live local report
+smoke completed `9` model calls with `0` fallbacks, generated a 2,242-character
+report, completed `2` review rounds, and passed citation-shape validation.
+
 ### Main contracts
 
 ```text

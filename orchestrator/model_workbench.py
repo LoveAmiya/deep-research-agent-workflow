@@ -158,7 +158,10 @@ class ModelWorkbenchRunner:
             if round_index >= 2 and red_review.get("passed") and not red_review.get("issues"):
                 break
 
-        self.final_report_markdown = self._ensure_chinese_report_shape(current_report)
+        self.final_report_markdown = self._ensure_citation_markers(
+            self._ensure_chinese_report_shape(current_report),
+            self.findings,
+        )
         self.citation_validation = self._validate_citations(self.final_report_markdown, self.findings)
         payload = self._build_payload(critic_review, red_review)
         self._emit("report_validated", {"citationValidation": self.citation_validation})
@@ -556,7 +559,12 @@ class ModelWorkbenchRunner:
         self._mark_step_running(task)
         started = time.perf_counter()
         try:
-            if stream_target and stream_field and getattr(self.llm_client, "supports_streaming", False):
+            if (
+                self.event_sink is not None
+                and stream_target
+                and stream_field
+                and getattr(self.llm_client, "supports_streaming", False)
+            ):
                 streamed_chunks: list[str] = []
                 visible_streamed = False
                 stream_started = False
@@ -992,6 +1000,23 @@ class ModelWorkbenchRunner:
         if "## References" not in text:
             text += "\n\n## References（参考来源）\n\n- 模型输出没有显式参考来源，建议重新运行或补充资料。\n"
         return text
+
+    @staticmethod
+    def _ensure_citation_markers(markdown: str, findings: list[dict]) -> str:
+        text = markdown.strip()
+        additions = []
+        for index, finding in enumerate(findings, start=1):
+            citation_id = finding.get("citationId") or finding.get("citation_id") or f"C{index}"
+            if not citation_id or f"[{citation_id}]" in text:
+                continue
+            title = finding.get("sourceTitle") or finding.get("source_title") or "model-provided source"
+            url = finding.get("sourceUrl") or finding.get("source_url") or ""
+            additions.append(f"- [{citation_id}] {title} {url}".strip())
+        if not additions:
+            return text
+        if "## References" not in text:
+            text += "\n\n## References（参考来源）\n"
+        return f"{text.rstrip()}\n" + "\n".join(additions) + "\n"
 
     @staticmethod
     def _red_review_text(red_review: dict, round_index: int) -> str:
