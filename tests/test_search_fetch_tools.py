@@ -55,7 +55,16 @@ class TestSearchFetchTools(unittest.TestCase):
         page = SimpleFetchTool(config).fetch("http://127.0.0.1:1/unavailable")
 
         self.assertFalse(page.fetched)
-        self.assertTrue(page.error)
+        self.assertIn("not allowed", page.error)
+
+    def test_simple_fetch_tool_rejects_non_http_urls(self) -> None:
+        config = SearchConfig(enabled=True, timeout_seconds=0.1)
+
+        for url in ("data:text/plain,secret", "file:///etc/passwd"):
+            with self.subTest(url=url):
+                page = SimpleFetchTool(config).fetch(url)
+                self.assertFalse(page.fetched)
+                self.assertIn("not allowed", page.error)
 
     def test_create_search_tool_default_returns_mock(self) -> None:
         with patch.dict(os.environ, {}, clear=True):

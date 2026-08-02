@@ -48,6 +48,7 @@ secrets.*
 # Local databases / run outputs
 *.sqlite3
 *.db
+data/
 runs/
 
 # Generated reports / temporary outputs

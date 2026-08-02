@@ -1,12 +1,9 @@
-import base64
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from dataclasses import dataclass, field
 from typing import Optional
 
 from core.config import DEFAULT_USER_AGENT, SearchConfig
+from core.safe_http import read_public_url
 from search.content_extraction import clean_text, extract_main_text, extract_title, truncate_text
 
 
@@ -74,10 +71,12 @@ class HTTPWebFetcher(BaseWebFetcher):
         timeout_seconds: float = 15.0,
         user_agent: str = DEFAULT_USER_AGENT,
         max_retries: int = 2,
+        max_response_bytes: int = 2 * 1024 * 1024,
     ) -> None:
         self.timeout_seconds = timeout_seconds
         self.user_agent = user_agent
         self.max_retries = max(0, max_retries)
+        self.max_response_bytes = max(1, max_response_bytes)
 
     def fetch(self, url: str, max_chars: int = 8000) -> WebFetchResult:
         if url.startswith("mock://"):
@@ -129,28 +128,13 @@ class HTTPWebFetcher(BaseWebFetcher):
         )
 
     def _read_url(self, url: str) -> tuple[bytes, str, Optional[int], str]:
-        if url.startswith("data:"):
-            return self._read_data_url(url)
-        request = urllib.request.Request(url, headers={"User-Agent": self.user_agent})
-        with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
-            content_type = response.headers.get("Content-Type", "")
-            status_code = response.getcode()
-            final_url = response.geturl()
-            return response.read(), content_type, status_code, final_url
-
-    @staticmethod
-    def _read_data_url(url: str) -> tuple[bytes, str, Optional[int], str]:
-        header, _, data = url.partition(",")
-        if not data:
-            raise ValueError("malformed data URL")
-        content_type = header.removeprefix("data:") or "text/plain"
-        is_base64 = content_type.endswith(";base64")
-        if is_base64:
-            content_type = content_type[: -len(";base64")]
-            raw_bytes = base64.b64decode(data)
-        else:
-            raw_bytes = urllib.parse.unquote_to_bytes(data)
-        return raw_bytes, content_type, 200, url
+        result = read_public_url(
+            url,
+            timeout_seconds=self.timeout_seconds,
+            user_agent=self.user_agent,
+            max_response_bytes=self.max_response_bytes,
+        )
+        return result.body, result.content_type, result.status_code, result.final_url
 
     def _build_result(
         self,
@@ -242,6 +226,7 @@ def create_web_fetcher(config: SearchConfig) -> BaseWebFetcher:
             timeout_seconds=config.timeout_seconds,
             user_agent=config.user_agent,
             max_retries=2,
+            max_response_bytes=config.max_response_bytes,
         )
     return MockWebFetcher()
 

@@ -1,6 +1,6 @@
 # DeepResearch 启动手册
 
-本手册对应 `feat/collaboration-ledger` 分支。该分支展示真实的运行内 Agent 工件交接、多轮 Red/Blue 审查和 SSE 工作台；它没有新增真实数据源。
+本手册对应远程 `main` 当前版本。系统展示真实的运行内 Agent 工件交接、多轮 Red/Blue 审查和 SSE 工作台；它没有内置或公开真实语料数据源。
 
 ## 最短启动路径
 
@@ -13,14 +13,15 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run_workbench.ps1
 
 浏览器打开 <http://127.0.0.1:18181/>。默认确定性模式不需要 API Key；它用于演示协作流程，不应把生成内容当作已核验研究结论。
 
-## 1. 切换到正确分支
+## 1. 确认当前版本
 
 ```powershell
-git switch feat/collaboration-ledger
+git switch main
+git pull --ff-only
 git status --short --branch
 ```
 
-应看到当前分支为 `feat/collaboration-ledger`。不要合并或删除 `main`。
+应看到当前分支为 `main`，并且工作区没有意外修改。
 
 ## 2. 检查 Python
 
@@ -43,7 +44,7 @@ python -m unittest tests.test_report_workbench
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
-测试验证协作账本、Agent 工件依赖、Red/Blue 轮次、SSE 顺序、报告结构和 mock 隔离。测试通过不代表外部网站一定可访问。
+测试验证协作账本、Agent 工件依赖、Red/Blue 轮次、SSE 顺序、报告结构、mock 隔离，以及网页抓取的 SSRF、重定向和响应大小边界。测试通过不代表外部网站一定可访问。
 
 ## 4. 启动浏览器工作台
 
@@ -88,6 +89,9 @@ DEEP_RESEARCH_LLM_BASE_URL=https://api.openai.com/v1
 ```
 
 模型配置由工作台在收到研究请求时加载，所以修改 `.env` 后通常应重启服务再测试。不要把 `.env`、API Key 或服务日志提交到 Git。
+
+远程仓库和 Docker 镜像只发布源码、测试、文档与空值配置模板。抓取语料、`data/`、`runs/`、
+SQLite、评测输出和日志全部留在本机。
 
 模型只负责规划、写作和审查。配置 API Key 不会自动提供真实网页证据。
 

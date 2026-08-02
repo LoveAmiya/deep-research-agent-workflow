@@ -4,7 +4,7 @@
 
 ## 中文
 
-DeepResearchAgent 是一个本地优先的多 Agent 研究报告项目。当前功能分支使用运行级协作账本连接 Planner、Searcher、Reader、Writer、Critic、Red 和 Blue：下游 Agent 消费已发布的工件版本，审查问题经过至少两轮 Red/Blue 修订，浏览器通过 SSE 展示初稿、审查过程与最终报告。
+DeepResearchAgent 是一个本地优先的多 Agent 研究报告项目。当前版本使用运行级协作账本连接 Planner、Searcher、Reader、Writer、Critic、Red 和 Blue：下游 Agent 消费已发布的工件版本，审查问题经过至少两轮 Red/Blue 修订，浏览器通过 SSE 展示初稿、审查过程与最终报告。
 
 > 当前边界：本分支升级的是协作、报告和工作台，不包含新的真实数据源。默认确定性来源只用于演示流程，不能作为研究引用；`mock://` 来源会从正式报告和引用校验中移除。没有真实来源时，页面会明确显示“需复查”，不会把模拟内容标成已验证事实。
 
@@ -21,11 +21,12 @@ DeepResearchAgent 是一个本地优先的多 Agent 研究报告项目。当前�
 - 无 API Key 的确定性演示模式，以及可选的 OpenAI-compatible LLM 模式。
 - 模型流在收到 `[DONE]` 或 `response.completed` 后立即结束，避免报告已经生成但 Agent 仍显示运行中。
 - 单次任务发生模型传输超时后停止重复调用；Critic、Red、Blue 会用本地规则完成并显示明确的降级状态。
+- 网页抓取只允许无凭据的公网 HTTP(S) 地址，拒绝本机/私网/保留地址和所有重定向；响应默认限制为 2 MiB。
 - 对外错误只返回稳定的安全提示，内部异常、密钥和本机路径不会出现在浏览器响应中。
 
 ### 当前本机演示验收
 
-截至 2026-07-28，完整测试集为 `319/319` 通过。针对“Critic 超时后 Blue 长时间运行”的回归测试会验证：任务仍能结束、后续节点显示“已用本地规则完成”、公开 Payload 不含原始超时异常，并且同一工件交接不会重复展示。
+截至 2026-08-02，完整测试集为 `325/325` 通过。针对“Critic 超时后 Blue 长时间运行”的回归测试会验证：任务仍能结束、后续节点显示“已用本地规则完成”、公开 Payload 不含原始超时异常，并且同一工件交接不会重复展示；抓取测试还覆盖 SSRF、非 HTTP(S) URL、重定向、超大响应拒绝和仓库数据隔离。
 
 ### 快速启动
 
@@ -34,7 +35,6 @@ DeepResearchAgent 是一个本地优先的多 Agent 研究报告项目。当前�
 ```powershell
 git clone https://github.com/LoveAmiya/deep-research-agent-workflow.git
 cd deep-research-agent-workflow
-git switch feat/collaboration-ledger
 python -m unittest tests.test_report_workbench
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run_workbench.ps1
 ```
@@ -71,6 +71,11 @@ DEEP_RESEARCH_LLM_WIRE_API=chat_completions
 ```
 
 工作台收到请求时会加载 `.env`。只有 `enabled`、模型名称和 API Key 均有效时才调用模型；否则进入确定性演示模式。不要提交 `.env`。
+
+### 仓库隐私边界
+
+远程仓库只包含源码、测试、文档和空值配置模板。`.env`、API Key、抓取内容、语料、SQLite、
+运行记录、评测输出和日志均由 `.gitignore` 与 `.dockerignore` 排除，不能提交、推送或打进镜像。
 
 ### 工作台中会看到什么
 
@@ -184,7 +189,7 @@ report_workbench.py   浏览器工作台与 API/SSE 服务
 
 ## English
 
-DeepResearchAgent is a local-first multi-agent research report project. On the `feat/collaboration-ledger` branch, agents exchange versioned artifacts through a run-scoped `ResearchLedger`, Red/Blue review runs for at least two visible rounds, and the browser streams the Writer draft, review transcript, and validated final report through readable SSE events.
+DeepResearchAgent is a local-first multi-agent research report project. Agents exchange versioned artifacts through a run-scoped `ResearchLedger`, Red/Blue review runs for at least two visible rounds, and the browser streams the Writer draft, review transcript, and validated final report through readable SSE events.
 
 This branch improves collaboration and report UX; it does not add a production-grade evidence source. Deterministic `mock://` sources are demo-only and are removed from public references and successful citation validation.
 
@@ -193,7 +198,6 @@ This branch improves collaboration and report UX; it does not add a production-g
 ```powershell
 git clone https://github.com/LoveAmiya/deep-research-agent-workflow.git
 cd deep-research-agent-workflow
-git switch feat/collaboration-ledger
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run_tests.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run_workbench.ps1
 ```
@@ -209,3 +213,5 @@ POST /api/research/stream
 ```
 
 The backend keeps structured JSON and SSE contracts. The normal UI renders readable agent status, handoffs, reports, review details, and citation evidence instead of raw model JSON.
+Web fetching accepts credential-free public HTTP(S) URLs only, rejects local/private/reserved addresses and redirects, and limits responses to 2 MiB by default through `DEEP_RESEARCH_FETCH_MAX_BYTES`.
+The remote repository and container context exclude `.env`, credentials, fetched corpora, databases, run artifacts, evaluation outputs, and logs.

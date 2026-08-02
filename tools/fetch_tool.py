@@ -1,9 +1,9 @@
 import html
 import re
 import urllib.error
-import urllib.request
 
 from core.config import SearchConfig
+from core.safe_http import read_public_url
 from core.schema import PageContent
 
 
@@ -41,24 +41,28 @@ class SimpleFetchTool(BaseFetchTool):
         self.timeout_seconds = config.timeout_seconds
         self.user_agent = config.user_agent
         self.max_text_length = max_text_length
+        self.max_response_bytes = config.max_response_bytes
 
     def fetch(self, url: str) -> PageContent:
-        request = urllib.request.Request(url, headers={"User-Agent": self.user_agent})
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
-                status_code = response.getcode()
-                content_type = response.headers.get("Content-Type", "")
-                if not self._is_text_content(content_type):
-                    return PageContent(
-                        url=url,
-                        title=None,
-                        text="",
-                        status_code=status_code,
-                        fetched=False,
-                        error=f"unsupported content type: {content_type}",
-                    )
-                charset = response.headers.get_content_charset() or "utf-8"
-                raw_text = response.read().decode(charset, errors="replace")
+            result = read_public_url(
+                url,
+                timeout_seconds=self.timeout_seconds,
+                user_agent=self.user_agent,
+                max_response_bytes=self.max_response_bytes,
+            )
+            status_code = result.status_code
+            content_type = result.content_type
+            if not self._is_text_content(content_type):
+                return PageContent(
+                    url=url,
+                    title=None,
+                    text="",
+                    status_code=status_code,
+                    fetched=False,
+                    error=f"unsupported content type: {content_type}",
+                )
+            raw_text = result.body.decode(result.charset or "utf-8", errors="replace")
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
             return PageContent(
                 url=url,

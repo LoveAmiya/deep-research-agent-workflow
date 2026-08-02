@@ -32,6 +32,7 @@ class SearchConfig:
     provider: str = "mock"
     max_results: int = 5
     timeout_seconds: float = 15.0
+    max_response_bytes: int = 2 * 1024 * 1024
     user_agent: str = DEFAULT_USER_AGENT
     provider_order: list[str] = field(default_factory=lambda: ["mock"])
     real_search_enabled: bool = False
@@ -159,6 +160,10 @@ def load_search_config_from_env(load_dotenv: bool = False) -> SearchConfig:
         provider=provider,
         max_results=_parse_int_env("DEEP_RESEARCH_SEARCH_MAX_RESULTS", 5),
         timeout_seconds=_parse_float_env("DEEP_RESEARCH_SEARCH_TIMEOUT_SECONDS", 15.0),
+        max_response_bytes=min(
+            _parse_int_env("DEEP_RESEARCH_FETCH_MAX_BYTES", 2 * 1024 * 1024),
+            16 * 1024 * 1024,
+        ),
         user_agent=os.getenv("DEEP_RESEARCH_USER_AGENT", DEFAULT_USER_AGENT),
         provider_order=provider_order,
         real_search_enabled=real_search_enabled or enabled,
