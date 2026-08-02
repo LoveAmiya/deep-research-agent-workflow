@@ -6,7 +6,7 @@
 
 DeepResearchAgent 是一个本地优先的多 Agent 研究报告项目。当前版本使用运行级协作账本连接 Planner、Searcher、Reader、Writer、Critic、Red 和 Blue：下游 Agent 消费已发布的工件版本，审查问题经过至少两轮 Red/Blue 修订，浏览器通过 SSE 展示初稿、审查过程与最终报告。
 
-> 当前边界：本分支升级的是协作、报告和工作台，不包含新的真实数据源。默认确定性来源只用于演示流程，不能作为研究引用；`mock://` 来源会从正式报告和引用校验中移除。没有真实来源时，页面会明确显示“需复查”，不会把模拟内容标成已验证事实。
+> 当前边界：当前版本升级的是协作、报告和工作台，不包含或公开新的真实数据源。默认确定性来源只用于演示流程，不能作为研究引用；`mock://` 来源会从正式报告和引用校验中移除。没有真实来源时，页面会明确显示“需复查”，不会把模拟内容标成已验证事实。
 
 ### 当前能力
 
@@ -191,7 +191,7 @@ report_workbench.py   浏览器工作台与 API/SSE 服务
 
 DeepResearchAgent is a local-first multi-agent research report project. Agents exchange versioned artifacts through a run-scoped `ResearchLedger`, Red/Blue review runs for at least two visible rounds, and the browser streams the Writer draft, review transcript, and validated final report through readable SSE events.
 
-This branch improves collaboration and report UX; it does not add a production-grade evidence source. Deterministic `mock://` sources are demo-only and are removed from public references and successful citation validation.
+This version improves collaboration and report UX; it does not bundle or publish a production-grade evidence source. Deterministic `mock://` sources are demo-only and are removed from public references and successful citation validation.
 
 ### Start
 
