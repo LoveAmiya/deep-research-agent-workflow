@@ -1,4 +1,4 @@
-# DeepResearchAgent
+﻿# DeepResearchAgent
 
 [中文](#中文) | [English](#english)
 
@@ -26,7 +26,7 @@ DeepResearchAgent 是一个本地优先的多 Agent 研究报告项目。当前�
 
 ### 当前本机演示验收
 
-截至 2026-08-02，完整测试集为 `328/328` 通过。针对“Critic 超时后 Blue 长时间运行”的回归测试会验证：任务仍能结束、后续节点显示“已用本地规则完成”、公开 Payload 不含原始超时异常，并且同一工件交接不会重复展示；抓取测试还覆盖 SSRF、非 HTTP(S) URL、重定向、超大响应拒绝和仓库数据隔离。
+截至 2026-08-02，当前公开 inventory 发现 `333` 项测试，分为 L0 单元/契约 `74`、L1 Agent 编排 `129`、L2 评测质量 `62`、L3 韧性/安全 `62`、L4 真实模型 smoke `6`。针对“Critic 超时后 Blue 长时间运行”的回归测试会验证：任务仍能结束、后续节点显示“已用本地规则完成”、公开 Payload 不含原始超时异常，并且同一工件交接不会重复展示；抓取测试还覆盖 SSRF、非 HTTP(S) URL、重定向、超大响应拒绝和仓库数据隔离。
 
 ### 快速启动
 
@@ -232,9 +232,7 @@ Keep the live smoke at `medium`; it deliberately does not inherit an unrelated
 `OPENAI_REASONING_EFFORT` value. Use another reasoning level only as an explicit,
 one-off manual override when you have accepted the additional latency.
 
-Verified locally on 2026-08-02: `328/328` tests passed. The live local report
-smoke completed `9` model calls with `0` fallbacks, generated a 2,242-character
-report, completed `2` review rounds, and passed citation-shape validation.
+Verified locally on 2026-08-02: the public inventory discovered `333` tests across five layers. The live local report smoke completed `9` model calls with `0` fallbacks, generated a 2,175-character report, completed `2` review rounds, and passed citation-shape validation.
 
 ### Main contracts
 
@@ -247,3 +245,4 @@ POST /api/research/stream
 The backend keeps structured JSON and SSE contracts. The normal UI renders readable agent status, handoffs, reports, review details, and citation evidence instead of raw model JSON.
 Web fetching accepts credential-free public HTTP(S) URLs only, rejects local/private/reserved addresses and redirects, and limits responses to 2 MiB by default through `DEEP_RESEARCH_FETCH_MAX_BYTES`.
 The remote repository and container context exclude `.env`, credentials, fetched corpora, databases, run artifacts, evaluation outputs, and logs.
+

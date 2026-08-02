@@ -1,4 +1,4 @@
-# DeepResearch 启动手册
+﻿# DeepResearch 启动手册
 
 本手册对应远程 `main` 当前版本。系统展示真实的运行内 Agent 工件交接、多轮 Red/Blue 审查和 SSE 工作台；它没有内置或公开真实语料数据源。
 
@@ -44,7 +44,7 @@ python -m unittest tests.test_report_workbench
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
-测试验证协作账本、Agent 工件依赖、Red/Blue 轮次、SSE 顺序、报告结构、mock 隔离，以及网页抓取的 SSRF、重定向和响应大小边界。截至 2026-08-02，完整测试集为 `328/328` 通过。测试通过不代表外部网站一定可访问。
+测试验证协作账本、Agent 工件依赖、Red/Blue 轮次、SSE 顺序、报告结构、mock 隔离，以及网页抓取的 SSRF、重定向和响应大小边界。截至 2026-08-02，当前公开 inventory 发现 `333` 项测试，分为 L0 单元/契约 `74`、L1 Agent 编排 `129`、L2 评测质量 `62`、L3 韧性/安全 `62`、L4 真实模型 smoke `6`。测试通过不代表外部网站一定可访问。
 
 ## 4. 启动浏览器工作台
 
@@ -163,3 +163,4 @@ POST /api/research/stream
 一次研究可能调用多个 Agent，并包含至少两轮 Red/Blue。测试真实模型前先运行确定性测试；不要为了观察 UI 连续重复提交同一个真实模型任务。
 
 完整说明见 [`README.md`](README.md)。
+
